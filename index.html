@@ -61,7 +61,7 @@
         <button id="saveBtn">Save</button>
         <button id="loadBtn">Load</button>
         <button id="helpBtn">Help</button>
-        <span class="pill" id="verPill">v4</span>
+        <span class="pill" id="verPill">v4.1</span>
         <span class="pill" id="datePill">Jan 1900</span>
         <span class="pill" id="popPill">Pop 0</span>
         <div class="speed">
@@ -157,7 +157,7 @@
 
   <script>
   ;(() => {
-    const VERSION = 'v4';
+    const VERSION = 'v4.1';
     const SIZE = 96; // map tiles per side
     const TILE = 16; // base tile draw size at scale=1
     const SEA = 3;   // sea level height
@@ -222,6 +222,7 @@
       return {
         h: 0,
         water: false,
+        ocean: false,
         zone: ZONE.NONE,
         special: SPECIAL.NONE,
         b: 0,
@@ -301,6 +302,7 @@
         const v = (h[idx(x,y)]-mn)/(mx-mn);
         t.h = Math.round(v*8);
         t.water = t.h <= SEA;
+        t.ocean = false;
         t.zone = ZONE.NONE; t.special = SPECIAL.NONE; t.b=0; t.t=T.NONE; t.u=U.NONE; t.powered=false; t.watered=false; t.pollution=0; t.traffic=0; t.crime=0; t.fire=0; t.land=0;
       }
       // carve a river
@@ -318,7 +320,7 @@
         const ny = y/SIZE; const nx = x/SIZE;
         let elev = 3 + Math.sin(nx*5)*0.8 + Math.cos(ny*4)*0.6 + (ny<0.35? (0.35-ny)*6 : 0);
         t.h = Math.round(clamp(elev,0,10));
-        t.water = false; t.zone=ZONE.NONE; t.special=SPECIAL.NONE; t.b=0; t.t=T.NONE; t.u=U.NONE; t.powered=false; t.watered=false; t.pollution=0; t.traffic=0; t.crime=0; t.fire=0; t.land=0;
+        t.water = false; t.ocean=false; t.zone=ZONE.NONE; t.special=SPECIAL.NONE; t.b=0; t.t=T.NONE; t.u=U.NONE; t.powered=false; t.watered=false; t.pollution=0; t.traffic=0; t.crime=0; t.fire=0; t.land=0;
       }
       // Delaware River ribbon along the east with a curve/bay south
       for(let y=0;y<SIZE;y++){
@@ -416,6 +418,20 @@
 
     const particles = [];
     const birds = [];
+    const boats = [];
+    function spawnBoat(){
+      // choose an ocean tile near shore in view
+      const [minx,miny] = screenToTile(0,0); const [maxx,maxy] = screenToTile(canvas.clientWidth,canvas.clientHeight);
+      for(let tries=0; tries<60; tries++){
+        const x = clamp(irnd(maxx-minx)+minx, 2, SIZE-3);
+        const y = clamp(irnd(maxy-miny)+miny, 2, SIZE-3);
+        const t = world.tiles[idx(x,y)]; if(!t.ocean) continue; let near=false; for4(x,y,(nx,ny)=>{ if(inb(nx,ny)&&!world.tiles[idx(nx,ny)].water) near=true; }); if(!near) continue;
+        // wind for direction
+        const wx = 0.9 + 0.2*Math.sin(y*0.08 + time.t*0.2); const wy = 0.1 + 0.2*Math.sin(x*0.06 - time.t*0.15); const wl=Math.hypot(wx,wy)||1;
+        boats.push({ x:x+0.5, y:y+0.5, vx:(wx/wl)*0.2, vy:(wy/wl)*0.2, a:1.0, r:0 });
+        break;
+      }
+    }
     function spawnBird(){
       // find a coastline y around current view
       const [minx,miny] = screenToTile(0,0); const [maxx,maxy] = screenToTile(canvas.clientWidth,canvas.clientHeight);
@@ -423,7 +439,7 @@
         const x = clamp(irnd(maxx-minx)+minx, 1, SIZE-2);
         const y = clamp(irnd(maxy-miny)+miny, 1, SIZE-2);
         const t = world.tiles[idx(x,y)];
-        if(t.water){ let nearLand=false; for4(x,y,(nx,ny)=>{ if(inb(nx,ny)&&!world.tiles[idx(nx,ny)].water) nearLand=true; }); if(nearLand){ const [sx,sy]=worldToScreen(x,y); birds.push({ x:sx, y:sy-10, vx: 0.6+Math.random()*0.6, vy: -0.05+Math.random()*0.1, t:0}); break; } }
+        if(t.ocean){ let nearLand=false; for4(x,y,(nx,ny)=>{ if(inb(nx,ny)&&!world.tiles[idx(nx,ny)].water) nearLand=true; }); if(nearLand){ const [sx,sy]=worldToScreen(x,y); birds.push({ x:sx, y:sy-10, vx: 0.6+Math.random()*0.6, vy: -0.05+Math.random()*0.1, t:0}); break; } }
       }
     }
     function spawnFireworks(){
@@ -442,6 +458,7 @@
       }
     }
     function render(){
+      const anim = Math.max(0, world.speed/10);
       ctx.clearRect(0,0,canvas.clientWidth, canvas.clientHeight);
       const s = TILE*cam.scale;
       const [minx,miny] = screenToTile(0,0);
@@ -453,7 +470,13 @@
         for(let x=ax;x<=bx;x++){
           const t = world.tiles[idx(x,y)];
           const wave = (Math.sin((x+y+time.t*0.5)*0.6)+1)/2*0.05;
-          const base = t.water? colLerp('#113a59','#0c2238', wave) : colLerp('#2b4c2b','#203a20', t.h/10);
+          let base;
+          if(t.water){
+            if(t.ocean){ base = colLerp('#113a59','#0c2238', wave); }
+            else { base = '#17324a'; }
+          } else {
+            base = colLerp('#2b4c2b','#203a20', t.h/10);
+          }
           drawTile(x,y,base);
         }
       }
@@ -477,12 +500,20 @@
       // ocean whitecaps + shore foam
       for(let y=ay;y<=by;y++){
         for(let x=ax;x<=bx;x++){
-          const t = world.tiles[idx(x,y)]; if(!t.water) continue; const [sx,sy]=worldToScreen(x,y); const ssz=s;
-          // whitecaps moving
-          const ph = (x*0.7 + y*0.5 + time.t*1.2) % 1.0; if(ph < 0.12){ ctx.globalAlpha=0.25; ctx.fillStyle='#ffffff'; ctx.fillRect(sx, sy+ssz*ph*8, ssz, 2); ctx.globalAlpha=1; }
-          // foam near coast
-          let near=false; let eN=false,eS=false,eW=false,eE=false; for4(x,y,(nx,ny)=>{ if(inb(nx,ny)&&!world.tiles[idx(nx,ny)].water){ near=true; if(nx<x) eW=true; if(nx>x) eE=true; if(ny<y) eN=true; if(ny>y) eS=true; }});
-          if(near){ ctx.globalAlpha=0.35; ctx.fillStyle='#eef6ff'; const w=Math.max(2, ssz*0.12*(1+Math.sin(time.t*2+ (x+y)))); if(eN) ctx.fillRect(sx, sy, ssz, w); if(eS) ctx.fillRect(sx, sy+ssz-w, ssz, w); if(eW) ctx.fillRect(sx, sy, w, ssz); if(eE) ctx.fillRect(sx+ssz-w, sy, w, ssz); ctx.globalAlpha=1; }
+          const t = world.tiles[idx(x,y)]; if(!t.ocean) continue; const [sx,sy]=worldToScreen(x,y); const ssz=s;
+          // wind field (mid-Atlantic westerlies + small variation)
+          const wx = 0.9 + 0.2*Math.sin(y*0.08 + time.t*0.2);
+          const wy = 0.1 + 0.2*Math.sin(x*0.06 - time.t*0.15);
+          let wl = Math.hypot(wx,wy); let wind = [wx/wl, wy/wl];
+          // adjust near coast to push waves towards shore
+          let near=false; let nxv=0, nyv=0; for4(x,y,(nx,ny)=>{ if(!inb(nx,ny)) return; if(!world.tiles[idx(nx,ny)].water){ near=true; nxv += nx-x; nyv += ny-y; } });
+          let dir = wind; if(near){ const nl = Math.hypot(nxv,nyv)||1; dir = [(wind[0]*0.6 + (nxv/nl)*0.4), (wind[1]*0.6 + (nyv/nl)*0.4)]; const dl=Math.hypot(dir[0],dir[1])||1; dir=[dir[0]/dl, dir[1]/dl]; }
+          // fewer whitecaps, marching along dir
+          const kx = dir[0]*0.9, ky = dir[1]*0.9; const phase = (x*kx + y*ky + time.t*0.8) % 1.0;
+          if(phase < 0.05 && ((x+y)%4===0)){ ctx.globalAlpha=0.22; ctx.strokeStyle='#eef6ff'; ctx.lineWidth = Math.max(1, ssz*0.06); ctx.beginPath(); // crest perpendicular to dir
+            const px = -dir[1], py = dir[0]; const cx = sx+ssz/2, cy = sy+ssz/2; ctx.moveTo(cx - px*ssz*0.5, cy - py*ssz*0.5); ctx.lineTo(cx + px*ssz*0.5, cy + py*ssz*0.5); ctx.stroke(); ctx.globalAlpha=1; }
+          // foam at coast based on impact angle
+          if(near){ const impact = Math.max(0, dir[0]*nxv + dir[1]*nyv)/Math.max(1, Math.hypot(nxv,nyv)); const w = Math.max(1, ssz*0.08*(1+Math.sin(time.t*1.5 + (x+y)*0.2))*impact); ctx.globalAlpha=0.3; ctx.fillStyle='#eef6ff'; if(nxv<0) ctx.fillRect(sx, sy, Math.max(2,w), ssz); if(nxv>0) ctx.fillRect(sx+ssz-Math.max(2,w), sy, Math.max(2,w), ssz); if(nyv<0) ctx.fillRect(sx, sy, ssz, Math.max(2,w)); if(nyv>0) ctx.fillRect(sx, sy+ssz-Math.max(2,w), ssz, Math.max(2,w)); ctx.globalAlpha=1; }
         }
       }
       // grids (light)
@@ -513,16 +544,16 @@
             if(!nN&&!nS&&!nW&&!nE){ ctx.moveTo(sx+ssz*0.2,cy); ctx.lineTo(sx+ssz*0.8,cy); }
             ctx.stroke();
             // marching ants traffic overlay: horizontal and vertical segments, offset by flow sign
-            const dash = [ssz*0.3, ssz*0.3];
+            const dash = [ssz*0.35, ssz*0.35];
             ctx.setLineDash(dash);
             ctx.lineWidth = Math.max(1, ssz*0.12);
             const flowH = t.fx; const flowV = t.fy;
             const antsSpeed = 2.0;
-            if(nW||nE){ ctx.strokeStyle = flowH>=0? '#ff9b5a':'#ffa36a'; ctx.lineDashOffset = (time.t*antsSpeed * (flowH>=0? -1:1))*ssz; ctx.beginPath(); if(nW){ ctx.moveTo(sx, cy); ctx.lineTo(cx, cy); } if(nE){ ctx.moveTo(cx, cy); ctx.lineTo(sx+ssz, cy); } ctx.stroke(); }
-            if(nN||nS){ ctx.strokeStyle = flowV>=0? '#ff9b5a':'#ffa36a'; ctx.lineDashOffset = (time.t*antsSpeed * (flowV>=0? -1:1))*ssz; ctx.beginPath(); if(nN){ ctx.moveTo(cx, sy); ctx.lineTo(cx, cy); } if(nS){ ctx.moveTo(cx, cy); ctx.lineTo(cx, sy+ssz); } ctx.stroke(); }
+            if(nW||nE){ ctx.strokeStyle = '#8ea6b8'; ctx.lineDashOffset = (time.t*antsSpeed * (flowH>=0? -1:1))*ssz; ctx.beginPath(); if(nW){ ctx.moveTo(sx, cy); ctx.lineTo(cx, cy); } if(nE){ ctx.moveTo(cx, cy); ctx.lineTo(sx+ssz, cy); } ctx.stroke(); }
+            if(nN||nS){ ctx.strokeStyle = '#8ea6b8'; ctx.lineDashOffset = (time.t*antsSpeed * (flowV>=0? -1:1))*ssz; ctx.beginPath(); if(nN){ ctx.moveTo(cx, sy); ctx.lineTo(cx, cy); } if(nS){ ctx.moveTo(cx, cy); ctx.lineTo(cx, sy+ssz); } ctx.stroke(); }
             // directional arrow at center
             const mag = Math.hypot(flowH, flowV);
-            if(mag>3){ const vx = (flowH/mag), vy=(flowV/mag); ctx.setLineDash([]); ctx.strokeStyle='#ffd36a'; ctx.lineWidth = Math.max(1, ssz*0.08); ctx.beginPath(); ctx.moveTo(cx - vx*ssz*0.15, cy - vy*ssz*0.15); ctx.lineTo(cx + vx*ssz*0.15, cy + vy*ssz*0.15); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + vx*ssz*0.15, cy + vy*ssz*0.15); ctx.lineTo(cx + vx*ssz*0.15 - vy*ssz*0.08, cy + vy*ssz*0.15 + vx*ssz*0.08); ctx.lineTo(cx + vx*ssz*0.15 + vy*ssz*0.08, cy + vy*ssz*0.15 - vx*ssz*0.08); ctx.fillStyle='#ffd36a'; ctx.fill(); }
+            if(mag>3){ const vx = (flowH/mag), vy=(flowV/mag); ctx.setLineDash([]); ctx.strokeStyle='#bcd0df'; ctx.lineWidth = Math.max(1, ssz*0.08); ctx.beginPath(); ctx.moveTo(cx - vx*ssz*0.15, cy - vy*ssz*0.15); ctx.lineTo(cx + vx*ssz*0.15, cy + vy*ssz*0.15); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + vx*ssz*0.15, cy + vy*ssz*0.15); ctx.lineTo(cx + vx*ssz*0.15 - vy*ssz*0.08, cy + vy*ssz*0.15 + vx*ssz*0.08); ctx.lineTo(cx + vx*ssz*0.15 + vy*ssz*0.08, cy + vy*ssz*0.15 - vx*ssz*0.08); ctx.fillStyle='#bcd0df'; ctx.fill(); }
             ctx.setLineDash([]);
           }
           if(t.t & T.RAIL){ ctx.fillStyle = '#7b5d2e'; ctx.fillRect(sx+ssz*0.45,sy,ssz*0.1,ssz); ctx.fillRect(sx,sy+ssz*0.45,ssz,ssz*0.1); }
@@ -552,9 +583,13 @@
       }
 
       // particles
-      for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; if(p.g){ p.vy += p.g; } p.a-=0.012; p.r+=0.01; if(p.a<=0){ particles.splice(i,1); continue; } ctx.globalAlpha = Math.max(0, p.a); ctx.fillStyle=p.color||'#9a9a9a'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
+      for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx*anim; p.y+=p.vy*anim; if(p.g){ p.vy += p.g*anim; } p.a-=0.012*anim; p.r+=0.01*anim; if(p.a<=0){ particles.splice(i,1); continue; } ctx.globalAlpha = Math.max(0, p.a); ctx.fillStyle=p.color||'#9a9a9a'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
+      // boats
+      for(let i=boats.length-1;i>=0;i--){ const b=boats[i]; b.x+=b.vx*anim; b.y+=b.vy*anim; // drift; fade slightly
+        const [sx,sy]=worldToScreen(b.x, b.y); ctx.fillStyle='#f2f6fb'; ctx.beginPath(); ctx.moveTo(sx, sy-2); ctx.lineTo(sx-4, sy+2); ctx.lineTo(sx+4, sy+2); ctx.closePath(); ctx.fill(); if(!inb(Math.floor(b.x), Math.floor(b.y)) || !world.tiles[idx(Math.floor(b.x),Math.floor(b.y))].ocean){ boats.splice(i,1); }
+      }
       // birds
-      for(let i=birds.length-1;i>=0;i--){ const b=birds[i]; b.x+=b.vx; b.y+=b.vy; b.t+=0.2; const wing = Math.sin(b.t)*3; ctx.strokeStyle='#ffffff'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(b.x-4, b.y); ctx.quadraticCurveTo(b.x-2, b.y-wing, b.x, b.y); ctx.quadraticCurveTo(b.x+2, b.y-wing, b.x+4, b.y); ctx.stroke(); if(b.x > canvas.clientWidth+20) birds.splice(i,1); }
+      for(let i=birds.length-1;i>=0;i--){ const b=birds[i]; b.x+=b.vx*anim; b.y+=b.vy*anim; b.t+=0.2*anim; const wing = Math.sin(b.t)*3; ctx.strokeStyle='#ffffff'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(b.x-4, b.y); ctx.quadraticCurveTo(b.x-2, b.y-wing, b.x, b.y); ctx.quadraticCurveTo(b.x+2, b.y-wing, b.x+4, b.y); ctx.stroke(); if(b.x > canvas.clientWidth+20) birds.splice(i,1); }
 
       // overlay heatmaps
       if(ui.overlay!=='none'){
@@ -620,6 +655,25 @@
         for4(x,y,(nx,ny)=>{ if(!inb(nx,ny)) return; const nt=world.tiles[idx(nx,ny)]; if(watered[idx(nx,ny)]) return; if(nt.u&U.PIPE){ watered[idx(nx,ny)]=1; qx.push(nx); qy.push(ny); } });
       }
       for(let i=0;i<watered.length;i++){ world.tiles[i].watered = !!watered[i]; }
+    }
+
+    function computeOcean(){
+      // mark all water connected to map edges as ocean
+      const ocean = new Uint8Array(SIZE*SIZE);
+      const qx=[], qy=[];
+      for(let x=0;x<SIZE;x++){
+        if(world.tiles[idx(x,0)].water){ ocean[idx(x,0)]=1; qx.push(x); qy.push(0); }
+        if(world.tiles[idx(x,SIZE-1)].water){ ocean[idx(x,SIZE-1)]=1; qx.push(x); qy.push(SIZE-1); }
+      }
+      for(let y=0;y<SIZE;y++){
+        if(world.tiles[idx(0,y)].water){ ocean[idx(0,y)]=1; qx.push(0); qy.push(y); }
+        if(world.tiles[idx(SIZE-1,y)].water){ ocean[idx(SIZE-1,y)]=1; qx.push(SIZE-1); qy.push(y); }
+      }
+      while(qx.length){
+        const x=qx.shift(), y=qy.shift();
+        for4(x,y,(nx,ny)=>{ if(!inb(nx,ny)) return; const i=idx(nx,ny); if(ocean[i]) return; const nt=world.tiles[i]; if(nt.water){ ocean[i]=1; qx.push(nx); qy.push(ny); } });
+      }
+      for(let i=0;i<world.tiles.length;i++){ world.tiles[i].ocean = !!ocean[i]; }
     }
 
     function computeLandValue(){
@@ -741,6 +795,7 @@
     function recompute(){
       computePower();
       computeWater();
+      computeOcean();
       simulateTraffic();
       simulateExternalities();
       computeLandValue();
@@ -898,7 +953,8 @@
     function tick(){
       const now = performance.now(); const dt = (now-last)/1000; last = now;
       acc += dt * (world.speed||0);
-      time.t += dt;
+      const anim = Math.max(0, world.speed/10);
+      time.t += dt * anim;
       // simulation sub-steps
       if(acc > 0.5){ recompute(); acc = 0.0; }
       // monthly budget
@@ -913,8 +969,9 @@
           if(world.month % 12 === 0){ spawnFireworks(); ui.log('Happy New Year! 🎆'); }
         }
       }
-      // occasionally spawn birds
+      // occasionally spawn birds and boats
       if(Math.random()<0.01){ spawnBird(); }
+      if(Math.random()<0.006){ spawnBoat(); }
       requestAnimationFrame(tick);
     }
 
