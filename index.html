@@ -349,7 +349,6 @@
         if(!inb(x,y)) continue; const t=world.tiles[idx(x,y)]; if(t.water) continue; if(x%2===0) t.t = t.t|T.ROAD; if(y%2===0) t.t = t.t|T.ROAD; if(Math.random()<0.2) t.u = t.u|U.POWER;
       }
       // Water pump along canal
-      const cy = Math.floor(SIZE*0.55);
       const wp = { x: 40, y: cy-2 };
       if(inb(wp.x,wp.y) && !world.tiles[idx(wp.x,wp.y)].water){ const t=world.tiles[idx(wp.x,wp.y)]; t.special=SPECIAL.WATER_PUMP; t.zone=ZONE.SPECIAL; }
       for(let x=28;x<=52;x++){ const y=cy-2; if(!inb(x,y)) continue; const t=world.tiles[idx(x,y)]; if(!t.water) t.u = t.u|U.PIPE; }
