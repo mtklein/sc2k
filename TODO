@@ -1,11 +1,4 @@
-- The overlays should display interesting information related to each in game system.
 - We need more music tracks by the musician "Lowest ROAR", a low-fi fan of LOW ROAR.
-- The game simulates fauna in its ecology too.
-- Day/night cycle should be visible to players.
 - Color changes should happen seasonally according to the mid-Atlantic climate we're set in.
 - The landscapes are beautiful, impressionistic, idyllic.
-- The game handles resizing well, including all overlays.
-- Waves lap on the shores of bodies of water not surrounded by land.
-- Traffic flow is simulated, and drawn on roads in proportion to their utilization in that network.
-- Boats look like a child's drawing of a boat: a semicircle hull, with a triangle sail above.
-- Boats can leave the edge of the screen without creating shipwrecks.
+- Autosave city progress periodically to protect against data loss.
