@@ -61,6 +61,7 @@
         <button id="saveBtn">Save</button>
         <button id="loadBtn">Load</button>
         <button id="helpBtn">Help</button>
+        <span class="pill" id="verPill">v4</span>
         <span class="pill" id="datePill">Jan 1900</span>
         <span class="pill" id="popPill">Pop 0</span>
         <div class="speed">
@@ -156,6 +157,7 @@
 
   <script>
   ;(() => {
+    const VERSION = 'v4';
     const SIZE = 96; // map tiles per side
     const TILE = 16; // base tile draw size at scale=1
     const SEA = 3;   // sea level height
@@ -228,6 +230,7 @@
         powered: false,
         watered: false,
         traffic: 0,
+        fx: 0, fy: 0,
         pollution: 0,
         crime: 0,
         fire: 0,
@@ -349,6 +352,9 @@
       // Starter infrastructure near Wilmington area and coherent arterial roads
       const pp = { x: 58, y: 18 };
       if(inb(pp.x,pp.y) && !world.tiles[idx(pp.x,pp.y)].water){ const t=world.tiles[idx(pp.x,pp.y)]; t.special=SPECIAL.POWER_PLANT; t.zone=ZONE.SPECIAL; }
+      // Backup plant near mid-county (south-west of Wilmington)
+      const pp2 = { x: 44, y: 30 };
+      if(inb(pp2.x,pp2.y) && !world.tiles[idx(pp2.x,pp2.y)].water){ const t=world.tiles[idx(pp2.x,pp2.y)]; t.special=SPECIAL.POWER_PLANT; t.zone=ZONE.SPECIAL; }
       // Arterials: N-S and E-W grids around Wilmington
       for(let y=12;y<=28;y+=2){ for(let x=46;x<=68;x++){ if(!inb(x,y)) continue; const t=world.tiles[idx(x,y)]; if(!t.water) t.t = t.t|T.ROAD; } }
       for(let x=46;x<=68;x+=2){ for(let y=12;y<=28;y++){ if(!inb(x,y)) continue; const t=world.tiles[idx(x,y)]; if(!t.water) t.t = t.t|T.ROAD; } }
@@ -409,6 +415,17 @@
     function colLerp(a,b,t){ const pa=parseInt(a.slice(1),16), pb=parseInt(b.slice(1),16); const r=Math.round(((pa>>16)&255)*(1-t)+((pb>>16)&255)*t); const g=Math.round(((pa>>8)&255)*(1-t)+((pb>>8)&255)*t); const bl=Math.round((pa&255)*(1-t)+((pb&255))*t); return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${bl.toString(16).padStart(2,'0')}`; }
 
     const particles = [];
+    const birds = [];
+    function spawnBird(){
+      // find a coastline y around current view
+      const [minx,miny] = screenToTile(0,0); const [maxx,maxy] = screenToTile(canvas.clientWidth,canvas.clientHeight);
+      for(let tries=0; tries<40; tries++){
+        const x = clamp(irnd(maxx-minx)+minx, 1, SIZE-2);
+        const y = clamp(irnd(maxy-miny)+miny, 1, SIZE-2);
+        const t = world.tiles[idx(x,y)];
+        if(t.water){ let nearLand=false; for4(x,y,(nx,ny)=>{ if(inb(nx,ny)&&!world.tiles[idx(nx,ny)].water) nearLand=true; }); if(nearLand){ const [sx,sy]=worldToScreen(x,y); birds.push({ x:sx, y:sy-10, vx: 0.6+Math.random()*0.6, vy: -0.05+Math.random()*0.1, t:0}); break; } }
+      }
+    }
     function spawnFireworks(){
       const make = (x,y)=>{
         for(let i=0;i<50;i++){
@@ -440,11 +457,32 @@
           drawTile(x,y,base);
         }
       }
-      // coast highlights
+      // beaches and coast highlights
       for(let y=ay;y<=by;y++){
         for(let x=ax;x<=bx;x++){
           const t = world.tiles[idx(x,y)];
-          if(!t.water){ let coast=false; for4(x,y,(nx,ny)=>{ if(inb(nx,ny) && world.tiles[idx(nx,ny)].water) coast=true; }); if(coast){ drawTile(x,y,'#335a33'); } }
+          if(!t.water){
+            // draw sand strips on edges bordering water
+            let edgeW=false, edgeE=false, edgeN=false, edgeS=false; 
+            const chk=(nx,ny)=> inb(nx,ny) && world.tiles[idx(nx,ny)].water;
+            edgeW = chk(x-1,y); edgeE = chk(x+1,y); edgeN = chk(x,y-1); edgeS = chk(x,y+1);
+            const [sx,sy]=worldToScreen(x,y); const ssz = s; ctx.fillStyle='#d7c79e';
+            if(edgeN) ctx.fillRect(sx, sy, ssz, Math.max(2, ssz*0.12));
+            if(edgeS) ctx.fillRect(sx, sy+ssz-Math.max(2, ssz*0.12), ssz, Math.max(2, ssz*0.12));
+            if(edgeW) ctx.fillRect(sx, sy, Math.max(2, ssz*0.12), ssz);
+            if(edgeE) ctx.fillRect(sx+ssz-Math.max(2, ssz*0.12), sy, Math.max(2, ssz*0.12), ssz);
+          }
+        }
+      }
+      // ocean whitecaps + shore foam
+      for(let y=ay;y<=by;y++){
+        for(let x=ax;x<=bx;x++){
+          const t = world.tiles[idx(x,y)]; if(!t.water) continue; const [sx,sy]=worldToScreen(x,y); const ssz=s;
+          // whitecaps moving
+          const ph = (x*0.7 + y*0.5 + time.t*1.2) % 1.0; if(ph < 0.12){ ctx.globalAlpha=0.25; ctx.fillStyle='#ffffff'; ctx.fillRect(sx, sy+ssz*ph*8, ssz, 2); ctx.globalAlpha=1; }
+          // foam near coast
+          let near=false; let eN=false,eS=false,eW=false,eE=false; for4(x,y,(nx,ny)=>{ if(inb(nx,ny)&&!world.tiles[idx(nx,ny)].water){ near=true; if(nx<x) eW=true; if(nx>x) eE=true; if(ny<y) eN=true; if(ny>y) eS=true; }});
+          if(near){ ctx.globalAlpha=0.35; ctx.fillStyle='#eef6ff'; const w=Math.max(2, ssz*0.12*(1+Math.sin(time.t*2+ (x+y)))); if(eN) ctx.fillRect(sx, sy, ssz, w); if(eS) ctx.fillRect(sx, sy+ssz-w, ssz, w); if(eW) ctx.fillRect(sx, sy, w, ssz); if(eE) ctx.fillRect(sx+ssz-w, sy, w, ssz); ctx.globalAlpha=1; }
         }
       }
       // grids (light)
@@ -458,7 +496,35 @@
         for(let x=ax;x<=bx;x++){
           const t = world.tiles[idx(x,y)];
           const [sx,sy]=worldToScreen(x,y); const ssz = s;
-          if(t.t & T.ROAD){ ctx.fillStyle = '#5b5b5b'; ctx.fillRect(sx,sy,ssz,ssz); ctx.fillStyle="#3a3a3a"; ctx.fillRect(sx+ssz*0.1,sy+ssz*0.4,ssz*0.8,ssz*0.2); }
+          if(t.t & T.ROAD){
+            // draw rounded road segments based on neighbors
+            ctx.lineWidth = Math.max(2, ssz*0.28); ctx.lineCap='round'; ctx.lineJoin='round';
+            const cx = sx+ssz/2, cy = sy+ssz/2; 
+            const nN = inb(x,y-1) && (world.tiles[idx(x,y-1)].t & T.ROAD);
+            const nS = inb(x,y+1) && (world.tiles[idx(x,y+1)].t & T.ROAD);
+            const nW = inb(x-1,y) && (world.tiles[idx(x-1,y)].t & T.ROAD);
+            const nE = inb(x+1,y) && (world.tiles[idx(x+1,y)].t & T.ROAD);
+            ctx.strokeStyle = '#60646a';
+            ctx.beginPath(); ctx.moveTo(cx,cy);
+            if(nN) { ctx.moveTo(cx,cy); ctx.lineTo(cx, sy); }
+            if(nS) { ctx.moveTo(cx,cy); ctx.lineTo(cx, sy+ssz); }
+            if(nW) { ctx.moveTo(cx,cy); ctx.lineTo(sx, cy); }
+            if(nE) { ctx.moveTo(cx,cy); ctx.lineTo(sx+ssz, cy); }
+            if(!nN&&!nS&&!nW&&!nE){ ctx.moveTo(sx+ssz*0.2,cy); ctx.lineTo(sx+ssz*0.8,cy); }
+            ctx.stroke();
+            // marching ants traffic overlay: horizontal and vertical segments, offset by flow sign
+            const dash = [ssz*0.3, ssz*0.3];
+            ctx.setLineDash(dash);
+            ctx.lineWidth = Math.max(1, ssz*0.12);
+            const flowH = t.fx; const flowV = t.fy;
+            const antsSpeed = 2.0;
+            if(nW||nE){ ctx.strokeStyle = flowH>=0? '#ff9b5a':'#ffa36a'; ctx.lineDashOffset = (time.t*antsSpeed * (flowH>=0? -1:1))*ssz; ctx.beginPath(); if(nW){ ctx.moveTo(sx, cy); ctx.lineTo(cx, cy); } if(nE){ ctx.moveTo(cx, cy); ctx.lineTo(sx+ssz, cy); } ctx.stroke(); }
+            if(nN||nS){ ctx.strokeStyle = flowV>=0? '#ff9b5a':'#ffa36a'; ctx.lineDashOffset = (time.t*antsSpeed * (flowV>=0? -1:1))*ssz; ctx.beginPath(); if(nN){ ctx.moveTo(cx, sy); ctx.lineTo(cx, cy); } if(nS){ ctx.moveTo(cx, cy); ctx.lineTo(cx, sy+ssz); } ctx.stroke(); }
+            // directional arrow at center
+            const mag = Math.hypot(flowH, flowV);
+            if(mag>3){ const vx = (flowH/mag), vy=(flowV/mag); ctx.setLineDash([]); ctx.strokeStyle='#ffd36a'; ctx.lineWidth = Math.max(1, ssz*0.08); ctx.beginPath(); ctx.moveTo(cx - vx*ssz*0.15, cy - vy*ssz*0.15); ctx.lineTo(cx + vx*ssz*0.15, cy + vy*ssz*0.15); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + vx*ssz*0.15, cy + vy*ssz*0.15); ctx.lineTo(cx + vx*ssz*0.15 - vy*ssz*0.08, cy + vy*ssz*0.15 + vx*ssz*0.08); ctx.lineTo(cx + vx*ssz*0.15 + vy*ssz*0.08, cy + vy*ssz*0.15 - vx*ssz*0.08); ctx.fillStyle='#ffd36a'; ctx.fill(); }
+            ctx.setLineDash([]);
+          }
           if(t.t & T.RAIL){ ctx.fillStyle = '#7b5d2e'; ctx.fillRect(sx+ssz*0.45,sy,ssz*0.1,ssz); ctx.fillRect(sx,sy+ssz*0.45,ssz,ssz*0.1); }
           if(t.u & U.POWER){ ctx.strokeStyle = '#ffd34d'; ctx.beginPath(); ctx.moveTo(sx+2,sy+2); ctx.lineTo(sx+ssz-2,sy+ssz-2); ctx.moveTo(sx+ssz-2,sy+2); ctx.lineTo(sx+2,sy+ssz-2); ctx.stroke(); }
           if(t.u & U.PIPE){ ctx.strokeStyle = '#55aaff'; ctx.strokeRect(sx+3,sy+3,ssz-6,ssz-6); }
@@ -487,6 +553,8 @@
 
       // particles
       for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; if(p.g){ p.vy += p.g; } p.a-=0.012; p.r+=0.01; if(p.a<=0){ particles.splice(i,1); continue; } ctx.globalAlpha = Math.max(0, p.a); ctx.fillStyle=p.color||'#9a9a9a'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
+      // birds
+      for(let i=birds.length-1;i>=0;i--){ const b=birds[i]; b.x+=b.vx; b.y+=b.vy; b.t+=0.2; const wing = Math.sin(b.t)*3; ctx.strokeStyle='#ffffff'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(b.x-4, b.y); ctx.quadraticCurveTo(b.x-2, b.y-wing, b.x, b.y); ctx.quadraticCurveTo(b.x+2, b.y-wing, b.x+4, b.y); ctx.stroke(); if(b.x > canvas.clientWidth+20) birds.splice(i,1); }
 
       // overlay heatmaps
       if(ui.overlay!=='none'){
@@ -597,7 +665,7 @@
     }
 
     function simulateTraffic(){
-      for(let i=0;i<world.tiles.length;i++){ world.tiles[i].traffic *= 0.75; }
+      for(let i=0;i<world.tiles.length;i++){ world.tiles[i].traffic *= 0.75; world.tiles[i].fx*=0.8; world.tiles[i].fy*=0.8; }
       const isJob = (x,y)=>{ const t=world.tiles[idx(x,y)]; return (t.zone===ZONE.COM||t.zone===ZONE.IND) && t.b>0; };
       const maxRadius = 28;
       for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
@@ -617,7 +685,15 @@
         }
         if(foundIdx>=0){
           let cur = foundIdx; let count=0;
-          while(parent[cur] !== -1 && count<maxRadius){ world.tiles[cur].traffic += 4; cur = parent[cur]; count++; }
+          while(parent[cur] !== -1 && count<maxRadius){
+            const p = parent[cur];
+            const cx = cur%SIZE, cy = Math.floor(cur/SIZE);
+            const px = p%SIZE, py = Math.floor(p/SIZE);
+            const dx = cx-px, dy = cy-py;
+            world.tiles[cur].traffic += 4; 
+            world.tiles[cur].fx += dx*2; world.tiles[cur].fy += dy*2; // accumulate directional flow
+            cur = p; count++;
+          }
         }
       }
     }
@@ -813,6 +889,7 @@
       document.getElementById('money').textContent = `$${world.money.toLocaleString()}`;
       document.getElementById('datePill').textContent = gameDate();
       const pop = world.popR + world.popC + world.popI; document.getElementById('popPill').textContent = `Pop ${pop.toLocaleString()}`;
+      document.getElementById('verPill').textContent = VERSION;
       setTimeout(hud, 200);
     }
 
@@ -836,6 +913,8 @@
           if(world.month % 12 === 0){ spawnFireworks(); ui.log('Happy New Year! 🎆'); }
         }
       }
+      // occasionally spawn birds
+      if(Math.random()<0.01){ spawnBird(); }
       requestAnimationFrame(tick);
     }
 
