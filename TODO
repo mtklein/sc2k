@@ -7,3 +7,4 @@
 - The whole game doesn't handle window resizing very well.
 - Add an ∞ tick box near the treasury information to make funds unlimited.
 - Waves crashing on the shore have disappeared.  Let's restore them.
+- Simulate traffic flow, and draw traffic on roads in proportion to their utilization and direction.
