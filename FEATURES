@@ -1,3 +1,14 @@
 - The game simulates the ecology of the mid-Atlantic seaboard.
 - Fireworks happen every January 1.
 - The default map resembles New Castle County Delaware.
+- Players can generate new random terrain maps.
+- Build roads, rails, utilities, and residential/commercial/industrial zones with parks, farms, and civic buildings.
+- Overlays display power, water, traffic, pollution, crime, land value, zones, fire, moisture, temperature, forest, O2, and CO2.
+- Cities can be saved and loaded from localStorage.
+- The world has a visible day/night cycle.
+- Birds and boats bring life to the ecosystem.
+- Coastal waters animate with waves that lap at shores.
+- Road traffic is simulated and visualized.
+- Boats are simple hull-and-sail drawings that sail offscreen without crashing.
+- The game handles window resizing smoothly, keeping overlays aligned.
+- Includes music and sound effects.
