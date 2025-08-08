@@ -32,7 +32,9 @@
     .neg { color: var(--danger); }
     .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .tool { background: #22283b; border: 1px solid #2a3040; padding: 8px; border-radius: 8px; text-align: center; cursor: pointer; user-select: none; }
+    .tool { background: #22283b; border: 1px solid #2a3040; padding: 8px; border-radius: 8px; text-align: center; cursor: pointer; user-select: none; display:flex; flex-direction:column; align-items:center; gap:4px; }
+    .tool .ico { font-size: 18px; line-height: 1; }
+    .tool .lbl { font-size: 11px; color: var(--muted); }
     .tool.active { outline: 2px solid var(--accent); }
     select, input[type="range"], input[type="number"], button { background: #202536; color: var(--text); border: 1px solid #2a3040; border-radius: 6px; padding: 6px; }
     .section-title { color: var(--accent-2); margin: 8px 0 6px; font-weight: 700; }
@@ -55,6 +57,7 @@
       <canvas id="canvas"></canvas>
       <div id="topbar">
         <button id="newMap">New</button>
+        <button id="nccMap">NCC Map</button>
         <button id="saveBtn">Save</button>
         <button id="loadBtn">Load</button>
         <button id="helpBtn">Help</button>
@@ -66,6 +69,7 @@
           <button data-speed="3.0">Fast</button>
           <button data-speed="10.0">Ultra</button>
         </div>
+        <button id="musicBtn">Music: Off</button>
       </div>
     </div>
     <div id="right">
@@ -124,7 +128,7 @@
         <h2>Micropolis+ — Quick Help</h2>
         <button onclick="ui.hideHelp()">Close</button>
       </div>
-      <div class="small">Single-file city builder inspired by SimCity 2000.</div>
+      <div class="small">Single-file city builder inspired by SimCity 2000. Includes a New Castle County, DE preset.</div>
       <h3>Goal</h3>
       <ul>
         <li>Provide power and water, build roads, zone Residential/Commercial/Industrial, and grow a thriving city.</li>
@@ -134,7 +138,7 @@
       <ul>
         <li>Pan: drag with mouse. Zoom: mouse wheel. Reset camera: press R.</li>
         <li>Tool hotkeys: B Bulldoze, R Road, T Rail, L Power Lines, W Pipes, 1-3 R/C/I Zones, P Park, O Power Plant, U Water Pump, F Fire Station, C Police, S School, Q Query.</li>
-        <li>Speed: top bar. New/Save/Load on the left.</li>
+        <li>Speed: top bar. New/Save/Load on the left. Click NCC Map for New Castle County. Toggle Music at the top.</li>
       </ul>
       <h3>Overlays</h3>
       <ul>
@@ -159,24 +163,24 @@
     const MONTH_SECONDS = 12; // real seconds per in-game month at 1x
 
     const Tools = [
-      { id: 'bulldoze', label: 'Bulldoze', key: 'b', cost: 1 },
-      { id: 'raise', label: 'Raise Land', key: 'E', cost: 5 },
-      { id: 'lower', label: 'Lower Land', key: 'Q', cost: 5 },
-      { id: 'smooth', label: 'Smooth', key: 'G', cost: 10 },
-      { id: 'road', label: 'Road', key: 'r', cost: 10 },
-      { id: 'rail', label: 'Rail', key: 't', cost: 20 },
-      { id: 'powerline', label: 'Power Line', key: 'l', cost: 5 },
-      { id: 'pipe', label: 'Pipe', key: 'w', cost: 5 },
-      { id: 'res', label: 'Residential', key: '1', cost: 100 },
-      { id: 'com', label: 'Commercial', key: '2', cost: 120 },
-      { id: 'ind', label: 'Industrial', key: '3', cost: 80 },
-      { id: 'park', label: 'Park', key: 'p', cost: 20 },
-      { id: 'powerplant', label: 'Power Plant', key: 'o', cost: 3000 },
-      { id: 'waterpump', label: 'Water Pump', key: 'u', cost: 1200 },
-      { id: 'fire', label: 'Fire Station', key: 'f', cost: 600 },
-      { id: 'police', label: 'Police', key: 'c', cost: 600 },
-      { id: 'school', label: 'School', key: 's', cost: 400 },
-      { id: 'query', label: 'Query', key: 'q', cost: 0 },
+      { id: 'bulldoze', label: 'Bulldoze', key: 'b', cost: 1, icon: '🧨' },
+      { id: 'raise', label: 'Raise Land', key: 'E', cost: 5, icon: '⛰️' },
+      { id: 'lower', label: 'Lower Land', key: 'Q', cost: 5, icon: '🕳️' },
+      { id: 'smooth', label: 'Smooth', key: 'G', cost: 10, icon: '🪵' },
+      { id: 'road', label: 'Road', key: 'r', cost: 10, icon: '🛣️' },
+      { id: 'rail', label: 'Rail', key: 't', cost: 20, icon: '🚆' },
+      { id: 'powerline', label: 'Power Line', key: 'l', cost: 5, icon: '⚡' },
+      { id: 'pipe', label: 'Pipe', key: 'w', cost: 5, icon: '🚰' },
+      { id: 'res', label: 'Residential', key: '1', cost: 100, icon: '🏠' },
+      { id: 'com', label: 'Commercial', key: '2', cost: 120, icon: '🏬' },
+      { id: 'ind', label: 'Industrial', key: '3', cost: 80, icon: '🏭' },
+      { id: 'park', label: 'Park', key: 'p', cost: 20, icon: '🌳' },
+      { id: 'powerplant', label: 'Power Plant', key: 'o', cost: 3000, icon: '🔋' },
+      { id: 'waterpump', label: 'Water Pump', key: 'u', cost: 1200, icon: '💧' },
+      { id: 'fire', label: 'Fire Station', key: 'f', cost: 600, icon: '🚒' },
+      { id: 'police', label: 'Police', key: 'c', cost: 600, icon: '🚓' },
+      { id: 'school', label: 'School', key: 's', cost: 400, icon: '🏫' },
+      { id: 'query', label: 'Query', key: 'q', cost: 0, icon: '🔍' },
     ];
 
     const T = {
@@ -244,6 +248,7 @@
     };
 
     const cam = { x: SIZE*TILE/2, y: SIZE*TILE/2, scale: 2.0, dragging: false, lx:0, ly:0 };
+    const time = { t: 0 };
 
     const ui = {
       tool: 'road', brush: 1, overlay: 'none', query: false,
@@ -298,6 +303,62 @@
       ui.log('New terrain generated.');
     }
 
+    // New Castle County, Delaware preset (approximate):
+    // East border is the Delaware River; Christina River delta near Wilmington;
+    // C&D Canal crosses roughly east-west around mid-county.
+    function seedNewCastle(){
+      // baseline gentle hills north; flatter south
+      for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+        const t = world.tiles[idx(x,y)];
+        const ny = y/SIZE; const nx = x/SIZE;
+        let elev = 3 + Math.sin(nx*5)*0.8 + Math.cos(ny*4)*0.6 + (ny<0.35? (0.35-ny)*6 : 0);
+        t.h = Math.round(clamp(elev,0,10));
+        t.water = false; t.zone=ZONE.NONE; t.special=SPECIAL.NONE; t.b=0; t.t=T.NONE; t.u=U.NONE; t.powered=false; t.watered=false; t.pollution=0; t.traffic=0; t.crime=0; t.fire=0; t.land=0;
+      }
+      // Delaware River ribbon along the east with a curve/bay south
+      for(let y=0;y<SIZE;y++){
+        const ny = y/SIZE;
+        const riverCenter = 0.80 - 0.08*Math.sin(ny*3.2);
+        for(let x=Math.floor(SIZE*riverCenter); x<SIZE; x++){
+          const t = world.tiles[idx(x,y)]; t.h = SEA-1; t.water = true;
+        }
+      }
+      // Christina River arm near Wilmington (north-east quadrant)
+      for(let i=0;i<60;i++){
+        const y = Math.floor(12 + i*0.35);
+        const x = Math.floor(64 - i*0.25 + Math.sin(i*0.2)*2);
+        if(inb(x,y)){ const t=world.tiles[idx(x,y)]; t.h=SEA-1; t.water=true; }
+        if(inb(x+1,y)){ const t=world.tiles[idx(x+1,y)]; t.h=SEA-1; t.water=true; }
+      }
+      // Chesapeake & Delaware Canal (roughly horizontal ~ middle)
+      const cy = Math.floor(SIZE*0.55);
+      for(let x=6;x<SIZE-6;x++){
+        for(let dy=-1; dy<=1; dy++){
+          const y = cy+dy; if(!inb(x,y)) continue; const t=world.tiles[idx(x,y)]; t.h=SEA-1; t.water=true;
+        }
+      }
+      // Set sea-level water expansion on low tiles touching water
+      for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+        const t=world.tiles[idx(x,y)];
+        if(t.h<=SEA && !t.water){ let near=false; for4(x,y,(nx,ny)=>{ if(inb(nx,ny)&&world.tiles[idx(nx,ny)].water) near=true; }); if(near){ t.water=true; t.h=SEA-1; }}
+      }
+      // Starter infrastructure near Wilmington area
+      const pp = { x: 58, y: 18 };
+      if(inb(pp.x,pp.y) && !world.tiles[idx(pp.x,pp.y)].water){ const t=world.tiles[idx(pp.x,pp.y)]; t.special=SPECIAL.POWER_PLANT; t.zone=ZONE.SPECIAL; }
+      for(let y=14;y<=24;y++) for(let x=48;x<=66;x++){
+        if(!inb(x,y)) continue; const t=world.tiles[idx(x,y)]; if(t.water) continue; if(x%2===0) t.t = t.t|T.ROAD; if(y%2===0) t.t = t.t|T.ROAD; if(Math.random()<0.2) t.u = t.u|U.POWER;
+      }
+      // Water pump along canal
+      const cy = Math.floor(SIZE*0.55);
+      const wp = { x: 40, y: cy-2 };
+      if(inb(wp.x,wp.y) && !world.tiles[idx(wp.x,wp.y)].water){ const t=world.tiles[idx(wp.x,wp.y)]; t.special=SPECIAL.WATER_PUMP; t.zone=ZONE.SPECIAL; }
+      for(let x=28;x<=52;x++){ const y=cy-2; if(!inb(x,y)) continue; const t=world.tiles[idx(x,y)]; if(!t.water) t.u = t.u|U.PIPE; }
+      // A few seed zones
+      const seedZones = [ [52,20,ZONE.RES], [54,20,ZONE.RES], [50,22,ZONE.COM], [56,22,ZONE.IND], [60,20,ZONE.RES] ];
+      seedZones.forEach(([x,y,z])=>{ if(inb(x,y)){ const t=world.tiles[idx(x,y)]; if(!t.water){ t.zone = z; t.b = 0; } } });
+      ui.log('New Castle County map generated.');
+    }
+
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
 
@@ -308,7 +369,7 @@
       Tools.forEach(t => {
         const div = document.createElement('div');
         div.className = 'tool' + (ui.tool===t.id? ' active':'');
-        div.textContent = t.label;
+        div.innerHTML = `<div class="ico">${t.icon||''}</div><div class=\"lbl\">${t.label}</div>`;
         div.title = `${t.label} ($${t.cost}) — key: ${t.key.toUpperCase()}`;
         div.onclick = ()=>{ ui.setTool(t.id); updateCostPreview(); };
         cont.appendChild(div);
@@ -340,6 +401,7 @@
     function drawTile(x,y,fill,stroke){ const [sx,sy]=worldToScreen(x,y); const s=TILE*cam.scale; ctx.fillStyle=fill; ctx.fillRect(sx,sy,s,s); if(stroke){ ctx.strokeStyle=stroke; ctx.strokeRect(sx+0.5,sy+0.5,s-1,s-1);} }
     function colLerp(a,b,t){ const pa=parseInt(a.slice(1),16), pb=parseInt(b.slice(1),16); const r=Math.round(((pa>>16)&255)*(1-t)+((pb>>16)&255)*t); const g=Math.round(((pa>>8)&255)*(1-t)+((pb>>8)&255)*t); const bl=Math.round((pa&255)*(1-t)+((pb&255))*t); return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${bl.toString(16).padStart(2,'0')}`; }
 
+    const particles = [];
     function render(){
       ctx.clearRect(0,0,canvas.clientWidth, canvas.clientHeight);
       const s = TILE*cam.scale;
@@ -351,7 +413,8 @@
       for(let y=ay;y<=by;y++){
         for(let x=ax;x<=bx;x++){
           const t = world.tiles[idx(x,y)];
-          const base = t.water? colLerp('#1b3a59','#0c2238', Math.random()*0.02) : colLerp('#2b4c2b','#203a20', t.h/10);
+          const wave = (Math.sin((x+y+time.t*0.5)*0.6)+1)/2*0.05;
+          const base = t.water? colLerp('#113a59','#0c2238', wave) : colLerp('#2b4c2b','#203a20', t.h/10);
           drawTile(x,y,base);
         }
       }
@@ -390,11 +453,16 @@
             if(t.special===SPECIAL.FIRE){ ctx.fillStyle='#ff6b6b'; ctx.fillRect(sx+ssz*0.25,sy+ssz*0.25,ssz*0.5,ssz*0.5);} 
             if(t.special===SPECIAL.POLICE){ ctx.fillStyle='#6b8bff'; ctx.fillRect(sx+ssz*0.25,sy+ssz*0.25,ssz*0.5,ssz*0.5);} 
             if(t.special===SPECIAL.SCHOOL){ ctx.fillStyle='#f7c36a'; ctx.fillRect(sx+ssz*0.25,sy+ssz*0.25,ssz*0.5,ssz*0.5);} 
+            // simple smoke from active industry
+            if(t.zone===ZONE.IND && t.b>0 && Math.random()<0.05){ particles.push({ x:sx+ssz*0.5+Math.random()*6-3, y:sy+ssz*0.2, vx:(Math.random()-0.5)*0.2, vy:-0.3-Math.random()*0.2, a:0.6, r:1.5+Math.random()*2 }); }
           }
           // fires overlay visual
           if(t.fire>0){ ctx.globalAlpha = clamp(t.fire/100, 0.2, 0.9); ctx.fillStyle = '#ff3b1a'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
         }
       }
+
+      // particles
+      for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.a-=0.01; p.r+=0.02; if(p.a<=0){ particles.splice(i,1); continue; } ctx.globalAlpha = Math.max(0, p.a); ctx.fillStyle='#9a9a9a'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
 
       // overlay heatmaps
       if(ui.overlay!=='none'){
@@ -421,7 +489,10 @@
       }
 
       // HUD
-      if(hoverTile){ const [hx,hy]=hoverTile; if(inb(hx,hy)){ const [sx,sy]=worldToScreen(hx,hy); ctx.strokeStyle='#50e3c2'; ctx.strokeRect(sx+0.5,sy+0.5,s-1,s-1); }}
+      if(hoverTile){ const [hx,hy]=hoverTile; if(inb(hx,hy)){
+        const b = ui.brush; const [sx,sy]=worldToScreen(hx,hy); const [sx2,sy2]=worldToScreen(hx+b, hy+b);
+        ctx.strokeStyle='#50e3c2'; ctx.globalAlpha=0.8; ctx.strokeRect(sx+0.5,sy+0.5,(sx2-sx)-1,(sy2-sy)-1); ctx.globalAlpha=1;
+      }}
       if(painting && currentDrag){ const [ax1,ay1]=currentDrag[0], [ax2,ay2]=currentDrag[1]; const x1=Math.min(ax1,ax2), y1=Math.min(ay1,ay2), x2=Math.max(ax1,ax2), y2=Math.max(ay1,ay2); const [sx,sy]=worldToScreen(x1,y1); const [sx2,sy2]=worldToScreen(x2+1,y2+1); ctx.strokeStyle='#50e3c2'; ctx.strokeRect(sx+0.5,sy+0.5,(sx2-sx)-1,(sy2-sy)-1); }
 
       requestAnimationFrame(render);
@@ -584,26 +655,25 @@
     function bulldoze(x,y){ const t=world.tiles[idx(x,y)]; if(t.water) return; t.zone=ZONE.NONE; t.special=SPECIAL.NONE; t.b=0; t.t=T.NONE; t.u=U.NONE; }
     function place(x,y){
       const t=world.tiles[idx(x,y)];
-      if(t.water) return false;
       switch(ui.tool){
         case 'bulldoze': bulldoze(x,y); return true;
         case 'raise': t.h = clamp(t.h+1,0,12); t.water = t.h<=SEA; return true;
         case 'lower': t.h = clamp(t.h-1,0,12); t.water = t.h<=SEA; return true;
         case 'smooth': {
           let s=t.h,c=1; for4(x,y,(nx,ny)=>{ if(!inb(nx,ny)) return; s+=world.tiles[idx(nx,ny)].h; c++; }); t.h = Math.round(s/c); t.water=t.h<=SEA; return true; }
-        case 'road': t.t = t.t|T.ROAD; return true;
-        case 'rail': t.t = t.t|T.RAIL; return true;
-        case 'powerline': t.u = t.u|U.POWER; return true;
-        case 'pipe': t.u = t.u|U.PIPE; return true;
-        case 'park': t.zone = ZONE.PARK; t.special=SPECIAL.NONE; t.b=0; return true;
-        case 'res': t.zone = ZONE.RES; t.special=SPECIAL.NONE; t.b=0; return true;
-        case 'com': t.zone = ZONE.COM; t.special=SPECIAL.NONE; t.b=0; return true;
-        case 'ind': t.zone = ZONE.IND; t.special=SPECIAL.NONE; t.b=0; return true;
-        case 'powerplant': t.special=SPECIAL.POWER_PLANT; t.zone=ZONE.SPECIAL; t.b=0; return true;
-        case 'waterpump': t.special=SPECIAL.WATER_PUMP; t.zone=ZONE.SPECIAL; t.b=0; return true;
-        case 'fire': t.special=SPECIAL.FIRE; t.zone=ZONE.SPECIAL; t.b=0; return true;
-        case 'police': t.special=SPECIAL.POLICE; t.zone=ZONE.SPECIAL; t.b=0; return true;
-        case 'school': t.special=SPECIAL.SCHOOL; t.zone=ZONE.SPECIAL; t.b=0; return true;
+        case 'road': if(!t.water){ t.t = t.t|T.ROAD; return true; } return false;
+        case 'rail': if(!t.water){ t.t = t.t|T.RAIL; return true; } return false;
+        case 'powerline': if(!t.water){ t.u = t.u|U.POWER; return true; } return false;
+        case 'pipe': if(!t.water){ t.u = t.u|U.PIPE; return true; } return false;
+        case 'park': if(!t.water){ t.zone = ZONE.PARK; t.special=SPECIAL.NONE; t.b=0; return true; } return false;
+        case 'res': if(!t.water){ t.zone = ZONE.RES; t.special=SPECIAL.NONE; t.b=0; return true; } return false;
+        case 'com': if(!t.water){ t.zone = ZONE.COM; t.special=SPECIAL.NONE; t.b=0; return true; } return false;
+        case 'ind': if(!t.water){ t.zone = ZONE.IND; t.special=SPECIAL.NONE; t.b=0; return true; } return false;
+        case 'powerplant': if(!t.water){ t.special=SPECIAL.POWER_PLANT; t.zone=ZONE.SPECIAL; t.b=0; return true; } return false;
+        case 'waterpump': if(!t.water){ t.special=SPECIAL.WATER_PUMP; t.zone=ZONE.SPECIAL; t.b=0; return true; } return false;
+        case 'fire': if(!t.water){ t.special=SPECIAL.FIRE; t.zone=ZONE.SPECIAL; t.b=0; return true; } return false;
+        case 'police': if(!t.water){ t.special=SPECIAL.POLICE; t.zone=ZONE.SPECIAL; t.b=0; return true; } return false;
+        case 'school': if(!t.water){ t.special=SPECIAL.SCHOOL; t.zone=ZONE.SPECIAL; t.b=0; return true; } return false;
       }
       return false;
     }
@@ -637,12 +707,16 @@
       const found = Tools.find(t=>t.key.toLowerCase()===k);
       if(found){ ui.setTool(found.id); updateCostPreview(); return; }
       if(k==='r'){ cam.x=SIZE*TILE/2; cam.y=SIZE*TILE/2; cam.scale=2.0; }
+      if(k==='arrowup'||k==='w'){ cam.y -= 16; }
+      if(k==='arrowdown'||k==='s'){ cam.y += 16; }
+      if(k==='arrowleft'||k==='a'){ cam.x -= 16; }
+      if(k==='arrowright'||k==='d'){ cam.x += 16; }
       if(k==='q'){ ui.setTool('query'); }
       if(k===' '){ togglePause(); }
     });
 
     function dragPaint(tx,ty,first=false){ if(!currentDrag) currentDrag=[[tx,ty],[tx,ty]]; currentDrag[1]=[tx,ty]; if(first) currentDrag[0]=[tx,ty]; }
-    function finalizeDrag(){ if(!currentDrag) return; const [ax1,ay1]=currentDrag[0], [ax2,ay2]=currentDrag[1]; const x1=Math.min(ax1,ax2), y1=Math.min(ay1,ay2), x2=Math.max(ax1,ax2), y2=Math.max(ay1,ay2); const b=ui.brush; const total = (x2-x1+1)*(y2-y1+1)*b*b*costOf(ui.tool); if(total>0 && !trySpend(total)) { ui.log('Build canceled.'); return; } for(let y=y1; y<=y2; y+=b){ for(let x=x1; x<=x2; x+=b){ applyBrush(x,y, place); } } recompute(); }
+    function finalizeDrag(){ if(!currentDrag) return; const [ax1,ay1]=currentDrag[0], [ax2,ay2]=currentDrag[1]; const x1=Math.min(ax1,ax2), y1=Math.min(ay1,ay2), x2=Math.max(ax1,ax2), y2=Math.max(ay1,ay2); const b=ui.brush; const total = (x2-x1+1)*(y2-y1+1)*b*b*costOf(ui.tool); if(total>0 && !trySpend(total)) { ui.log('Build canceled.'); return; } let any=false; for(let y=y1; y<=y2; y+=b){ for(let x=x1; x<=x2; x+=b){ applyBrush(x,y, (nx,ny)=>{ const ok=place(nx,ny); if(ok) any=true; }); } } if(any){ sfx.build(); } recompute(); }
 
     function queryAt(x,y){ const t=world.tiles[idx(x,y)]; const parts=[]; parts.push(`Tile ${x},${y}`); parts.push(`Elev ${t.h}${t.water?' (water)':''}`); if(t.zone===ZONE.RES) parts.push(`Residential L${t.b+1}`); if(t.zone===ZONE.COM) parts.push(`Commercial L${t.b+1}`); if(t.zone===ZONE.IND) parts.push(`Industrial L${t.b+1}`); if(t.zone===ZONE.PARK) parts.push('Park'); if(t.special!==SPECIAL.NONE){ parts.push(['','Power Plant','Water Pump','Fire','Police','School'][t.special]); }
       parts.push(`Road:${(t.t&T.ROAD)?'Y':'N'} Rail:${(t.t&T.RAIL)?'Y':'N'} Pwr:${(t.u&U.POWER)?'Y':'N'} Pipe:${(t.u&U.PIPE)?'Y':'N'}`);
@@ -662,7 +736,8 @@
     document.getElementById('overlay').addEventListener('change', (e)=>{ ui.setOverlay(e.target.value); renderOverlayLegend(); });
     document.getElementById('queryBtn').addEventListener('click', ()=> ui.setTool('query'));
     document.getElementById('helpBtn').addEventListener('click', ()=> ui.showHelp());
-    document.getElementById('newMap').addEventListener('click', ()=>{ if(confirm('Start new map? Unsaved progress will be lost.')){ seedMap(); world.money=START_MONEY; world.month=0; ui.log('New city founded.'); recompute(); } });
+    document.getElementById('newMap').addEventListener('click', ()=>{ if(confirm('Start new random map? Unsaved progress will be lost.')){ seedMap(); world.money=START_MONEY; world.month=0; ui.log('New city founded.'); recompute(); } });
+    document.getElementById('nccMap').addEventListener('click', ()=>{ if(confirm('Start New Castle County map? Unsaved progress will be lost.')){ seedNewCastle(); world.money=START_MONEY; world.month=0; ui.log('Welcome to New Castle County, DE.'); recompute(); } });
     document.getElementById('saveBtn').addEventListener('click', ()=>{ localStorage.setItem('micropolis_save', serialize()); ui.log('Saved to localStorage.'); });
     document.getElementById('loadBtn').addEventListener('click', ()=>{ const s=localStorage.getItem('micropolis_save'); if(s) deserialize(s); else ui.log('No save found.'); });
     document.getElementById('taxRate').addEventListener('change', (e)=>{ world.taxRate=parseFloat(e.target.value)||7; ui.log(`Tax rate set to ${world.taxRate}%`); });
@@ -695,6 +770,7 @@
     function tick(){
       const now = performance.now(); const dt = (now-last)/1000; last = now;
       acc += dt * (world.speed||0);
+      time.t += dt;
       // simulation sub-steps
       if(acc > 0.5){ recompute(); acc = 0.0; }
       // monthly budget
@@ -706,10 +782,20 @@
       requestAnimationFrame(tick);
     }
 
+    // Simple WebAudio music + SFX
+    const audio = { ctx:null, master:null, musicGain:null, on:false };
+    function audioInit(){ if(audio.ctx) return; const ctx = new (window.AudioContext||window.webkitAudioContext)(); audio.ctx=ctx; const master=ctx.createGain(); master.gain.value=0.5; master.connect(ctx.destination); audio.master=master; audio.musicGain=ctx.createGain(); audio.musicGain.gain.value=0.25; audio.musicGain.connect(master); musicLoop(); }
+    function musicChord(freqs, dur){ const now = audio.ctx.currentTime; freqs.forEach((f,i)=>{ const osc=audio.ctx.createOscillator(); const g=audio.ctx.createGain(); osc.type='sine'; osc.frequency.value=f; osc.connect(g); g.connect(audio.musicGain); const a=0.02; g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.15/(i+1), now+a); g.gain.exponentialRampToValueAtTime(0.001, now+dur); osc.start(now); osc.stop(now+dur+0.05); }); }
+    function musicLoop(){ if(!audio.ctx) return; const bpm=60; const beat=60/bpm; let t=audio.ctx.currentTime; const seq=[[220,277,330],[196,247,294],[165,220,262],[196,247,330]]; for(let i=0;i<16;i++){ const chord=seq[i%seq.length].map(f=>f*(1+0.005*Math.sin(i))); setTimeout(()=>{ if(audio.on) musicChord(chord, beat*3.5); }, i*beat*1000); }
+      setTimeout(musicLoop, beat*16*1000);
+    }
+    const sfx = { build: ()=>{ if(!audio.ctx) return; const t=audio.ctx.currentTime; const o=audio.ctx.createOscillator(); const g=audio.ctx.createGain(); o.type='triangle'; o.frequency.setValueAtTime(880, t); o.frequency.exponentialRampToValueAtTime(440, t+0.08); g.gain.setValueAtTime(0.0, t); g.gain.linearRampToValueAtTime(0.15, t+0.01); g.gain.exponentialRampToValueAtTime(0.001, t+0.2); o.connect(g); g.connect(audio.master); o.start(t); o.stop(t+0.25);} };
+    document.getElementById('musicBtn').addEventListener('click', ()=>{ if(!audio.ctx) audioInit(); audio.on=!audio.on; document.getElementById('musicBtn').textContent = 'Music: ' + (audio.on? 'On':'Off'); if(audio.on && audio.ctx.state==='suspended') audio.ctx.resume(); });
+
     // bootstrap
     function init(){
       resize(); renderTools(); renderOverlayLegend();
-      seedMap(); recompute(); hud(); render(); tick();
+      seedNewCastle(); recompute(); hud(); render(); tick();
       ui.log('Welcome! Build roads, a power plant, and zone R/C/I.');
     }
     init();
