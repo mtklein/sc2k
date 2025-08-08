@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Micropolis+ (Single-File City Builder)</title>
+  <style>
+    :root {
+      --bg: #0e0f13;
+      --panel: #171922;
+      --panel-2: #1e2230;
+      --accent: #50e3c2;
+      --accent-2: #8ecbff;
+      --text: #e6eef7;
+      --muted: #9fb1c3;
+      --danger: #ff5865;
+      --warn: #ffb86b;
+      --ok: #7ce38b;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font: 14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif; }
+    #app { display: grid; grid-template-columns: 1fr 320px; height: 100%; }
+    #left { position: relative; }
+    #right { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border-left: 1px solid #2a3040; display: grid; grid-template-rows: auto auto 1fr auto; }
+    #topbar { position: absolute; left: 10px; top: 10px; display: flex; gap: 8px; align-items: center; padding: 8px; background: rgba(0,0,0,0.35); border: 1px solid #2a3040; border-radius: 8px; backdrop-filter: blur(6px); }
+    #topbar button { background: #202536; color: var(--text); border: 1px solid #2a3040; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+    #topbar button.active { outline: 2px solid var(--accent); }
+    #topbar .speed { display: inline-flex; gap: 6px; }
+    #canvas { width: 100%; height: 100%; display: block; background: #1a2030; }
+    .panel { padding: 10px 12px; border-bottom: 1px solid #2a3040; }
+    .money { font-weight: 700; color: var(--ok); }
+    .neg { color: var(--danger); }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .tool { background: #22283b; border: 1px solid #2a3040; padding: 8px; border-radius: 8px; text-align: center; cursor: pointer; user-select: none; }
+    .tool.active { outline: 2px solid var(--accent); }
+    select, input[type="range"], input[type="number"], button { background: #202536; color: var(--text); border: 1px solid #2a3040; border-radius: 6px; padding: 6px; }
+    .section-title { color: var(--accent-2); margin: 8px 0 6px; font-weight: 700; }
+    #log { padding: 10px 12px; border-top: 1px solid #2a3040; height: 160px; overflow: auto; font-size: 12px; color: var(--muted); background: #121520; }
+    .pill { padding: 2px 6px; border-radius: 999px; font-size: 12px; background: #2a3042; color: var(--muted); }
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; padding: 1px 4px; border: 1px solid #2a3040; border-radius: 4px; background: #1b2233; }
+    .small { font-size: 12px; color: var(--muted); }
+    #overlayLegend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 12px; color: var(--muted); }
+    #help { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); }
+    #help .card { width: min(860px, 96vw); max-height: 90vh; overflow: auto; background: #121826; border: 1px solid #2a3040; border-radius: 12px; padding: 16px; }
+    #help h2 { margin: 0 0 8px; }
+    #help ul { padding-left: 18px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="left">
+      <canvas id="canvas"></canvas>
+      <div id="topbar">
+        <button id="newMap">New</button>
+        <button id="saveBtn">Save</button>
+        <button id="loadBtn">Load</button>
+        <button id="helpBtn">Help</button>
+        <span class="pill" id="datePill">Jan 1900</span>
+        <span class="pill" id="popPill">Pop 0</span>
+        <div class="speed">
+          <button data-speed="0.0">Pause</button>
+          <button data-speed="1.0" class="active">Play</button>
+          <button data-speed="3.0">Fast</button>
+          <button data-speed="10.0">Ultra</button>
+        </div>
+      </div>
+    </div>
+    <div id="right">
+      <div class="panel" id="budgetPanel">
+        <div class="row" style="justify-content: space-between">
+          <div>
+            <div style="font-weight:700">Treasury: <span id="money" class="money">$20,000</span></div>
+            <div class="small">Monthly: <span id="monthly" class="pill">$0</span></div>
+          </div>
+          <div>
+            <label>Taxes: <input id="taxRate" type="number" min="0" max="20" step="0.5" value="7" style="width:70px" />%</label>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="section-title">Tools</div>
+        <div class="tools" id="tools"></div>
+        <div class="row" style="margin-top:8px">
+          <label>Brush <select id="brush">
+            <option value="1">1x1</option>
+            <option value="2">2x2</option>
+            <option value="4">4x4</option>
+          </select></label>
+          <label>Cost: <span id="costPreview" class="pill">$0</span></label>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="section-title">Overlay</div>
+        <div class="row">
+          <select id="overlay">
+            <option value="none">None</option>
+            <option value="power">Power</option>
+            <option value="water">Water</option>
+            <option value="traffic">Traffic</option>
+            <option value="pollution">Pollution</option>
+            <option value="crime">Crime</option>
+            <option value="land">Land Value</option>
+            <option value="zones">Zones</option>
+            <option value="fire">Fires</option>
+          </select>
+          <button id="queryBtn">Query (Q)</button>
+        </div>
+        <div id="overlayLegend" style="margin-top:8px"></div>
+      </div>
+      <div class="panel">
+        <div class="section-title">Advisors</div>
+        <div id="advisors" class="small">Welcome, Mayor! Lay roads, plop a power plant, zone R/C/I, then unpause.</div>
+      </div>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="card">
+      <div style="display:flex; justify-content: space-between; align-items:center; gap:8px; margin-bottom: 6px;">
+        <h2>Micropolis+ — Quick Help</h2>
+        <button onclick="ui.hideHelp()">Close</button>
+      </div>
+      <div class="small">Single-file city builder inspired by SimCity 2000.</div>
+      <h3>Goal</h3>
+      <ul>
+        <li>Provide power and water, build roads, zone Residential/Commercial/Industrial, and grow a thriving city.</li>
+        <li>Balance budget via Taxes. Place services (Fire/Police/School/Park) to improve land value and safety.</li>
+      </ul>
+      <h3>Controls</h3>
+      <ul>
+        <li>Pan: drag with mouse. Zoom: mouse wheel. Reset camera: press R.</li>
+        <li>Tool hotkeys: B Bulldoze, R Road, T Rail, L Power Lines, W Pipes, 1-3 R/C/I Zones, P Park, O Power Plant, U Water Pump, F Fire Station, C Police, S School, Q Query.</li>
+        <li>Speed: top bar. New/Save/Load on the left.</li>
+      </ul>
+      <h3>Overlays</h3>
+      <ul>
+        <li>Power/Water: shows connectivity. Traffic: road usage heatmap. Pollution/Crime: darker = worse. Land Value: greener = better.</li>
+      </ul>
+      <h3>Tips</h3>
+      <ul>
+        <li>Zones need adjacent road and power to develop; water improves growth.</li>
+        <li>Industrial raises pollution; parks and waterfront increase land value.</li>
+        <li>Fires break out; fire stations help suppress. Bulldoze rubble.</li>
+      </ul>
+      <div class="small">Made with pure Canvas 2D. No external assets.</div>
+    </div>
+  </div>
+
+  <script>
+  ;(() => {
+    const SIZE = 96; // map tiles per side
+    const TILE = 16; // base tile draw size at scale=1
+    const SEA = 3;   // sea level height
+    const START_MONEY = 20000;
+    const MONTH_SECONDS = 12; // real seconds per in-game month at 1x
+
+    const Tools = [
+      { id: 'bulldoze', label: 'Bulldoze', key: 'b', cost: 1 },
+      { id: 'raise', label: 'Raise Land', key: 'E', cost: 5 },
+      { id: 'lower', label: 'Lower Land', key: 'Q', cost: 5 },
+      { id: 'smooth', label: 'Smooth', key: 'G', cost: 10 },
+      { id: 'road', label: 'Road', key: 'r', cost: 10 },
+      { id: 'rail', label: 'Rail', key: 't', cost: 20 },
+      { id: 'powerline', label: 'Power Line', key: 'l', cost: 5 },
+      { id: 'pipe', label: 'Pipe', key: 'w', cost: 5 },
+      { id: 'res', label: 'Residential', key: '1', cost: 100 },
+      { id: 'com', label: 'Commercial', key: '2', cost: 120 },
+      { id: 'ind', label: 'Industrial', key: '3', cost: 80 },
+      { id: 'park', label: 'Park', key: 'p', cost: 20 },
+      { id: 'powerplant', label: 'Power Plant', key: 'o', cost: 3000 },
+      { id: 'waterpump', label: 'Water Pump', key: 'u', cost: 1200 },
+      { id: 'fire', label: 'Fire Station', key: 'f', cost: 600 },
+      { id: 'police', label: 'Police', key: 'c', cost: 600 },
+      { id: 'school', label: 'School', key: 's', cost: 400 },
+      { id: 'query', label: 'Query', key: 'q', cost: 0 },
+    ];
+
+    const T = {
+      NONE: 0,
+      ROAD: 1,
+      RAIL: 2,
+    };
+    const U = {
+      NONE: 0,
+      POWER: 1,
+      PIPE: 2,
+    };
+
+    const ZONE = {
+      NONE: 0,
+      RES: 1,
+      COM: 2,
+      IND: 3,
+      PARK: 4,
+      SPECIAL: 5, // power plant, etc.
+    };
+
+    const SPECIAL = {
+      NONE: 0,
+      POWER_PLANT: 1,
+      WATER_PUMP: 2,
+      FIRE: 3,
+      POLICE: 4,
+      SCHOOL: 5,
+    };
+
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const rnd = (n=1) => Math.random()*n;
+    const irnd = (n=1) => Math.floor(Math.random()*n);
+
+    function makeTile() {
+      return {
+        h: 0,
+        water: false,
+        zone: ZONE.NONE,
+        special: SPECIAL.NONE,
+        b: 0,
+        t: T.NONE,
+        u: U.NONE,
+        powered: false,
+        watered: false,
+        traffic: 0,
+        pollution: 0,
+        crime: 0,
+        fire: 0,
+        land: 0,
+      };
+    }
+
+    const world = {
+      tiles: new Array(SIZE*SIZE).fill(0).map(makeTile),
+      popR: 0, popC: 0, popI: 0,
+      money: START_MONEY,
+      month: 0,
+      taxRate: 7.0,
+      demandR: 0, demandC: 0, demandI: 0,
+      powerCapacity: 0,
+      waterCapacity: 0,
+      speed: 1.0,
+    };
+
+    const cam = { x: SIZE*TILE/2, y: SIZE*TILE/2, scale: 2.0, dragging: false, lx:0, ly:0 };
+
+    const ui = {
+      tool: 'road', brush: 1, overlay: 'none', query: false,
+      setTool(id){ this.tool = id; this.query = (id==='query'); renderTools(); },
+      setOverlay(v){ this.overlay = v; },
+      log(msg){ const el = document.getElementById('log'); const time = gameDate(); el.innerHTML = `<div>[${time}] ${msg}</div>` + el.innerHTML; },
+      help: false,
+      showHelp(){ document.getElementById('help').style.display='flex'; },
+      hideHelp(){ document.getElementById('help').style.display='none'; },
+    };
+
+    function idx(x,y){ return y*SIZE + x; }
+    function inb(x,y){ return x>=0 && x<SIZE && y>=0 && y<SIZE; }
+    function for4(x,y,fn){ fn(x+1,y); fn(x-1,y); fn(x,y+1); fn(x,y-1); }
+
+    function gameDate(){ const year = 1900 + Math.floor(world.month/12); const m = world.month%12; const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[m]} ${year}`; }
+
+    function seedMap() {
+      // Diamond-square-ish simple fractal for height
+      const h = new Float32Array(SIZE*SIZE);
+      const put = (x,y,v)=>{ h[idx(x,y)] = v; };
+      const get = (x,y)=> h[idx(clamp(x,0,SIZE-1), clamp(y,0,SIZE-1))];
+      // start with random corners
+      put(0,0,rnd(8)); put(SIZE-1,0,rnd(8)); put(0,SIZE-1,rnd(8)); put(SIZE-1,SIZE-1,rnd(8));
+      let step = SIZE-1; let rough = 4;
+      while(step>1){
+        for(let y=0;y<SIZE-1;y+=step){
+          for(let x=0;x<SIZE-1;x+=step){
+            const m = (get(x,y)+get(x+step,y)+get(x,y+step)+get(x+step,y+step))/4 + (rnd(2)-1)*rough;
+            put(x+step/2,y+step/2,m);
+          }
+        }
+        for(let y=0;y<SIZE;y+=step/2){
+          for(let x=(y%(step)===0? step/2:0); x<SIZE; x+=step){
+            const v = (get(x-step/2,y)+get(x+step/2,y)+get(x,y-step/2)+get(x,y+step/2))/4 + (rnd(2)-1)*rough;
+            put(x,y,v);
+          }
+        }
+        step/=2; rough*=0.55;
+      }
+      // normalize
+      let mn=1e9,mx=-1e9; for(let i=0;i<h.length;i++){ if(h[i]<mn) mn=h[i]; if(h[i]>mx) mx=h[i]; }
+      for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+        const t = world.tiles[idx(x,y)];
+        const v = (h[idx(x,y)]-mn)/(mx-mn);
+        t.h = Math.round(v*8);
+        t.water = t.h <= SEA;
+        t.zone = ZONE.NONE; t.special = SPECIAL.NONE; t.b=0; t.t=T.NONE; t.u=U.NONE; t.powered=false; t.watered=false; t.pollution=0; t.traffic=0; t.crime=0; t.fire=0; t.land=0;
+      }
+      // carve a river
+      let rx = irnd(SIZE), ry=0; for(let i=0;i<SIZE*2;i++){ if(!inb(rx,ry)) break; const t=world.tiles[idx(rx,ry)]; t.h=SEA-1; t.water=true; ry++; rx += irnd(3)-1; rx=clamp(rx,1,SIZE-2);}      
+      ui.log('New terrain generated.');
+    }
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // UI setup
+    function renderTools(){
+      const cont = document.getElementById('tools');
+      cont.innerHTML = '';
+      Tools.forEach(t => {
+        const div = document.createElement('div');
+        div.className = 'tool' + (ui.tool===t.id? ' active':'');
+        div.textContent = t.label;
+        div.title = `${t.label} ($${t.cost}) — key: ${t.key.toUpperCase()}`;
+        div.onclick = ()=>{ ui.setTool(t.id); updateCostPreview(); };
+        cont.appendChild(div);
+      });
+    }
+
+    function resize(){
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.clientWidth = canvas.parentElement.clientWidth;
+      const h = canvas.clientHeight = canvas.parentElement.clientHeight;
+      canvas.width = Math.floor(w*dpr);
+      canvas.height = Math.floor(h*dpr);
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    }
+    window.addEventListener('resize', resize);
+
+    function worldToScreen(tx,ty){
+      return [ (tx*TILE - cam.x)*cam.scale + canvas.clientWidth/2,
+               (ty*TILE - cam.y)*cam.scale + canvas.clientHeight/2 ];
+    }
+    function screenToTile(px,py){
+      const x = (px - canvas.clientWidth/2)/cam.scale + cam.x;
+      const y = (py - canvas.clientHeight/2)/cam.scale + cam.y;
+      return [Math.floor(x/TILE), Math.floor(y/TILE)];
+    }
+
+    // Drawing helpers
+    function drawRect(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x,y,w,h); }
+    function drawTile(x,y,fill,stroke){ const [sx,sy]=worldToScreen(x,y); const s=TILE*cam.scale; ctx.fillStyle=fill; ctx.fillRect(sx,sy,s,s); if(stroke){ ctx.strokeStyle=stroke; ctx.strokeRect(sx+0.5,sy+0.5,s-1,s-1);} }
+    function colLerp(a,b,t){ const pa=parseInt(a.slice(1),16), pb=parseInt(b.slice(1),16); const r=Math.round(((pa>>16)&255)*(1-t)+((pb>>16)&255)*t); const g=Math.round(((pa>>8)&255)*(1-t)+((pb>>8)&255)*t); const bl=Math.round((pa&255)*(1-t)+((pb&255))*t); return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${bl.toString(16).padStart(2,'0')}`; }
+
+    function render(){
+      ctx.clearRect(0,0,canvas.clientWidth, canvas.clientHeight);
+      const s = TILE*cam.scale;
+      const [minx,miny] = screenToTile(0,0);
+      const [maxx,maxy] = screenToTile(canvas.clientWidth,canvas.clientHeight);
+      const ax = clamp(minx-1,0,SIZE-1), bx = clamp(maxx+1,0,SIZE-1);
+      const ay = clamp(miny-1,0,SIZE-1), by = clamp(maxy+1,0,SIZE-1);
+      // terrain
+      for(let y=ay;y<=by;y++){
+        for(let x=ax;x<=bx;x++){
+          const t = world.tiles[idx(x,y)];
+          const base = t.water? colLerp('#1b3a59','#0c2238', Math.random()*0.02) : colLerp('#2b4c2b','#203a20', t.h/10);
+          drawTile(x,y,base);
+        }
+      }
+      // coast highlights
+      for(let y=ay;y<=by;y++){
+        for(let x=ax;x<=bx;x++){
+          const t = world.tiles[idx(x,y)];
+          if(!t.water){ let coast=false; for4(x,y,(nx,ny)=>{ if(inb(nx,ny) && world.tiles[idx(nx,ny)].water) coast=true; }); if(coast){ drawTile(x,y,'#335a33'); } }
+        }
+      }
+      // grids (light)
+      ctx.globalAlpha=0.08; ctx.strokeStyle='#ffffff';
+      for(let x=ax;x<=bx;x++){ const [sx] = worldToScreen(x,0); ctx.beginPath(); ctx.moveTo(Math.round(sx)+0.5,0); ctx.lineTo(Math.round(sx)+0.5,canvas.clientHeight); ctx.stroke(); }
+      for(let y=ay;y<=by;y++){ const [,sy] = worldToScreen(0,y); ctx.beginPath(); ctx.moveTo(0,Math.round(sy)+0.5); ctx.lineTo(canvas.clientWidth,Math.round(sy)+0.5); ctx.stroke(); }
+      ctx.globalAlpha=1;
+
+      // utilities, transport, zones/buildings
+      for(let y=ay;y<=by;y++){
+        for(let x=ax;x<=bx;x++){
+          const t = world.tiles[idx(x,y)];
+          const [sx,sy]=worldToScreen(x,y); const ssz = s;
+          if(t.t & T.ROAD){ ctx.fillStyle = '#5b5b5b'; ctx.fillRect(sx,sy,ssz,ssz); ctx.fillStyle="#3a3a3a"; ctx.fillRect(sx+ssz*0.1,sy+ssz*0.4,ssz*0.8,ssz*0.2); }
+          if(t.t & T.RAIL){ ctx.fillStyle = '#7b5d2e'; ctx.fillRect(sx+ssz*0.45,sy,ssz*0.1,ssz); ctx.fillRect(sx,sy+ssz*0.45,ssz,ssz*0.1); }
+          if(t.u & U.POWER){ ctx.strokeStyle = '#ffd34d'; ctx.beginPath(); ctx.moveTo(sx+2,sy+2); ctx.lineTo(sx+ssz-2,sy+ssz-2); ctx.moveTo(sx+ssz-2,sy+2); ctx.lineTo(sx+2,sy+ssz-2); ctx.stroke(); }
+          if(t.u & U.PIPE){ ctx.strokeStyle = '#55aaff'; ctx.strokeRect(sx+3,sy+3,ssz-6,ssz-6); }
+          if(t.zone!==ZONE.NONE || t.special!==SPECIAL.NONE){
+            let col = '#6aa867';
+            if(t.zone===ZONE.RES) col = ['#6aa867','#5c9a59','#458243'][t.b]||'#6aa867';
+            if(t.zone===ZONE.COM) col = ['#6a86a8','#5c789a','#3e5d84'][t.b]||'#6a86a8';
+            if(t.zone===ZONE.IND) col = ['#a8a06a','#9a905c','#847e3e'][t.b]||'#a8a06a';
+            if(t.zone===ZONE.PARK) col = '#2fa24f';
+            if(t.special!==SPECIAL.NONE) col = '#a86a6a';
+            ctx.fillStyle = col; ctx.fillRect(sx+2,sy+2,ssz-4,ssz-4);
+            if(t.special===SPECIAL.POWER_PLANT){ ctx.fillStyle='#ffef70'; ctx.fillRect(sx+ssz*0.2,sy+ssz*0.2,ssz*0.6,ssz*0.6);} 
+            if(t.special===SPECIAL.WATER_PUMP){ ctx.fillStyle='#6bc0ff'; ctx.beginPath(); ctx.arc(sx+ssz/2, sy+ssz/2, ssz*0.35, 0, Math.PI*2); ctx.fill(); }
+            if(t.special===SPECIAL.FIRE){ ctx.fillStyle='#ff6b6b'; ctx.fillRect(sx+ssz*0.25,sy+ssz*0.25,ssz*0.5,ssz*0.5);} 
+            if(t.special===SPECIAL.POLICE){ ctx.fillStyle='#6b8bff'; ctx.fillRect(sx+ssz*0.25,sy+ssz*0.25,ssz*0.5,ssz*0.5);} 
+            if(t.special===SPECIAL.SCHOOL){ ctx.fillStyle='#f7c36a'; ctx.fillRect(sx+ssz*0.25,sy+ssz*0.25,ssz*0.5,ssz*0.5);} 
+          }
+          // fires overlay visual
+          if(t.fire>0){ ctx.globalAlpha = clamp(t.fire/100, 0.2, 0.9); ctx.fillStyle = '#ff3b1a'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+        }
+      }
+
+      // overlay heatmaps
+      if(ui.overlay!=='none'){
+        for(let y=ay;y<=by;y++){
+          for(let x=ax;x<=bx;x++){
+            const t = world.tiles[idx(x,y)];
+            const [sx,sy]=worldToScreen(x,y); const ssz=s;
+            if(ui.overlay==='power' && t.powered){ ctx.globalAlpha=0.2; ctx.fillStyle='#ffd34d'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+            if(ui.overlay==='water' && t.watered){ ctx.globalAlpha=0.2; ctx.fillStyle='#55aaff'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+            if(ui.overlay==='traffic'){ const v = clamp(t.traffic/50,0,1); if(v>0){ ctx.globalAlpha = clamp(v*0.7,0.1,0.7); ctx.fillStyle='#ff7b3b'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; } }
+            if(ui.overlay==='pollution'){ const v = clamp(t.pollution/100,0,1); if(v>0){ ctx.globalAlpha = clamp(v*0.7,0.1,0.7); ctx.fillStyle='#8a8a8a'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; } }
+            if(ui.overlay==='crime'){ const v = clamp(t.crime/100,0,1); if(v>0){ ctx.globalAlpha = clamp(v*0.7,0.1,0.7); ctx.fillStyle='#c43b7a'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; } }
+            if(ui.overlay==='land'){ const v = clamp((t.land+50)/100,0,1); ctx.globalAlpha = 0.25; ctx.fillStyle = colLerp('#8a1a1a', '#1a8a2a', v); ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+            if(ui.overlay==='zones'){
+              if(t.zone===ZONE.RES){ ctx.globalAlpha=0.25; ctx.fillStyle='#6aa867'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+              if(t.zone===ZONE.COM){ ctx.globalAlpha=0.25; ctx.fillStyle='#6a86a8'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+              if(t.zone===ZONE.IND){ ctx.globalAlpha=0.25; ctx.fillStyle='#a8a06a'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+              if(t.zone===ZONE.PARK){ ctx.globalAlpha=0.25; ctx.fillStyle='#2fa24f'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+              if(t.special!==SPECIAL.NONE){ ctx.globalAlpha=0.25; ctx.fillStyle='#a86a6a'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+            }
+            if(ui.overlay==='fire' && t.fire>0){ ctx.globalAlpha = clamp(t.fire/100,0.2,0.9); ctx.fillStyle='#ff3b1a'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+          }
+        }
+      }
+
+      // HUD
+      if(hoverTile){ const [hx,hy]=hoverTile; if(inb(hx,hy)){ const [sx,sy]=worldToScreen(hx,hy); ctx.strokeStyle='#50e3c2'; ctx.strokeRect(sx+0.5,sy+0.5,s-1,s-1); }}
+      if(painting && currentDrag){ const [ax1,ay1]=currentDrag[0], [ax2,ay2]=currentDrag[1]; const x1=Math.min(ax1,ax2), y1=Math.min(ay1,ay2), x2=Math.max(ax1,ax2), y2=Math.max(ay1,ay2); const [sx,sy]=worldToScreen(x1,y1); const [sx2,sy2]=worldToScreen(x2+1,y2+1); ctx.strokeStyle='#50e3c2'; ctx.strokeRect(sx+0.5,sy+0.5,(sx2-sx)-1,(sy2-sy)-1); }
+
+      requestAnimationFrame(render);
+    }
+
+    // Simulation
+    function computePower() {
+      world.powerCapacity = 0;
+      const powered = new Uint8Array(SIZE*SIZE);
+      const qx=[], qy=[];
+      for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+        const t=world.tiles[idx(x,y)];
+        if(t.special===SPECIAL.POWER_PLANT){ world.powerCapacity += 5000; powered[idx(x,y)]=1; qx.push(x); qy.push(y); }
+      }
+      while(qx.length){
+        const x=qx.shift(), y=qy.shift();
+        const i=idx(x,y); powered[i]=1;
+        for4(x,y,(nx,ny)=>{ if(!inb(nx,ny)) return; const nt=world.tiles[idx(nx,ny)]; if(powered[idx(nx,ny)]) return; if((nt.u&U.POWER) || nt.zone!==ZONE.NONE || nt.special!==SPECIAL.NONE){ powered[idx(nx,ny)]=1; qx.push(nx); qy.push(ny); } });
+      }
+      for(let i=0;i<powered.length;i++){ world.tiles[i].powered = !!powered[i]; }
+    }
+
+    function computeWater(){
+      world.waterCapacity = 0;
+      const watered = new Uint8Array(SIZE*SIZE);
+      const qx=[], qy=[];
+      for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+        const t=world.tiles[idx(x,y)];
+        if(t.special===SPECIAL.WATER_PUMP){ world.waterCapacity += 3000; watered[idx(x,y)]=1; qx.push(x); qy.push(y); }
+      }
+      while(qx.length){
+        const x=qx.shift(), y=qy.shift();
+        for4(x,y,(nx,ny)=>{ if(!inb(nx,ny)) return; const nt=world.tiles[idx(nx,ny)]; if(watered[idx(nx,ny)]) return; if(nt.u&U.PIPE){ watered[idx(nx,ny)]=1; qx.push(nx); qy.push(ny); } });
+      }
+      for(let i=0;i<watered.length;i++){ world.tiles[i].watered = !!watered[i]; }
+    }
+
+    function computeLandValue(){
+      for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+        const t=world.tiles[idx(x,y)];
+        let v = 0;
+        // near water and parks increase
+        let nearWater=0, parks=0, services=0;
+        for(let dy=-3;dy<=3;dy++) for(let dx=-3;dx<=3;dx++){ const nx=x+dx, ny=y+dy; if(!inb(nx,ny)) continue; const nt=world.tiles[idx(nx,ny)]; if(nt.water) nearWater++; if(nt.zone===ZONE.PARK) parks++; if(nt.special===SPECIAL.SCHOOL||nt.special===SPECIAL.POLICE||nt.special===SPECIAL.FIRE) services++; }
+        v += nearWater*0.2 + parks*0.6 + services*0.5;
+        v -= world.tiles[idx(x,y)].pollution*0.2 + world.tiles[idx(x,y)].crime*0.2;
+        v -= world.tiles[idx(x,y)].traffic*0.1;
+        world.tiles[idx(x,y)].land = clamp(Math.round(v), -50, 50);
+      }
+    }
+
+    function hasRoadAdj(x,y){ let ok=false; for4(x,y,(nx,ny)=>{ if(inb(nx,ny) && (world.tiles[idx(nx,ny)].t&T.ROAD)) ok=true; }); return ok; }
+
+    function developZones(){
+      world.popR = world.popC = world.popI = 0;
+      let jobsC=0,jobsI=0, homes=0;
+      for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+        const t=world.tiles[idx(x,y)];
+        if(t.zone===ZONE.RES){ homes += (t.b+1)*8; world.popR += (t.b+1)*6; }
+        if(t.zone===ZONE.COM){ jobsC += (t.b+1)*6; world.popC += (t.b+1)*4; }
+        if(t.zone===ZONE.IND){ jobsI += (t.b+1)*10; world.popI += (t.b+1)*6; }
+      }
+      const jobs = jobsC + jobsI;
+      const pop = world.popR + world.popC + world.popI;
+      world.demandR = clamp(Math.round((jobs - pop)*0.02 - (world.taxRate-7)*2), -50, 50);
+      world.demandC = clamp(Math.round((pop - jobsC)*0.02 - (world.taxRate-7)*2), -50, 50);
+      world.demandI = clamp(Math.round((pop - jobsI)*0.02 - (world.taxRate-7)*2), -50, 50);
+
+      for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+        const t=world.tiles[idx(x,y)];
+        if(t.zone===ZONE.RES || t.zone===ZONE.COM || t.zone===ZONE.IND){
+          const demand = t.zone===ZONE.RES? world.demandR : (t.zone===ZONE.COM? world.demandC : world.demandI);
+          const desirability = demand + t.land + (t.powered?10:-20) + (t.watered?5:0) + (hasRoadAdj(x,y)?8:-30) - (t.pollution*0.3) - (t.crime*0.3);
+          if(desirability > 10 && t.b<2 && Math.random()<0.4){ t.b++; }
+          if(desirability < -10 && t.b>0 && Math.random()<0.3){ t.b--; }
+        }
+      }
+    }
+
+    function simulateTraffic(){
+      for(let i=0;i<world.tiles.length;i++){ world.tiles[i].traffic *= 0.75; }
+      const isJob = (x,y)=>{ const t=world.tiles[idx(x,y)]; return (t.zone===ZONE.COM||t.zone===ZONE.IND) && t.b>0; };
+      const maxRadius = 28;
+      for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+        const t=world.tiles[idx(x,y)]; if(t.zone!==ZONE.RES || t.b===0) continue; if(!hasRoadAdj(x,y)) continue;
+        const visited = new Uint8Array(SIZE*SIZE);
+        const q=[]; const start = idx(x,y); q.push(start); visited[start]=1; const parent = new Int32Array(SIZE*SIZE); parent.fill(-1);
+        let foundIdx=-1; let steps=0;
+        while(q.length && steps<maxRadius){
+          const cur = q.shift(); const cx = cur%SIZE, cy = Math.floor(cur/SIZE);
+          if(world.tiles[cur].t & T.ROAD){
+            let jobNear=false;
+            for4(cx,cy,(nx,ny)=>{ if(!inb(nx,ny)) return; if(isJob(nx,ny)) jobNear=true; });
+            if(jobNear){ foundIdx = cur; break; }
+          }
+          for4(cx,cy,(nx,ny)=>{ if(!inb(nx,ny)) return; const ni=idx(nx,ny); if(visited[ni]) return; if((world.tiles[ni].t & T.ROAD) || ni===start){ visited[ni]=1; parent[ni]=cur; q.push(ni); } });
+          steps++;
+        }
+        if(foundIdx>=0){
+          let cur = foundIdx; let count=0;
+          while(parent[cur] !== -1 && count<maxRadius){ world.tiles[cur].traffic += 4; cur = parent[cur]; count++; }
+        }
+      }
+    }
+
+    function simulateExternalities(){
+      for(let i=0;i<world.tiles.length;i++){ const t=world.tiles[i]; t.pollution *= 0.9; t.crime *= 0.9; t.fire = Math.max(0, t.fire-0.5); }
+      for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+        const t=world.tiles[idx(x,y)];
+        if(t.zone===ZONE.IND){ t.pollution += 2 + t.b; }
+        if(t.t&T.ROAD){ t.pollution += world.tiles[idx(x,y)].traffic*0.03; }
+        // crime higher with poor land value and low police coverage
+        let police=0; for(let dy=-6;dy<=6;dy++) for(let dx=-6;dx<=6;dx++){ const nx=x+dx, ny=y+dy; if(!inb(nx,ny)) continue; if(world.tiles[idx(nx,ny)].special===SPECIAL.POLICE) police++; }
+        const unemployment = Math.max(0, world.demandI + world.demandC < 0 ? -(world.demandI+world.demandC) : 0);
+        t.crime += clamp(5 - police*0.3 + unemployment*0.1, 0, 8);
+        // random fires; fire stations suppress
+        let fireCover=0; for(let dy=-5;dy<=5;dy++) for(let dx=-5;dx<=5;dx++){ const nx=x+dx, ny=y+dy; if(!inb(nx,ny)) continue; if(world.tiles[idx(nx,ny)].special===SPECIAL.FIRE) fireCover++; }
+        if((t.zone!==ZONE.NONE || t.special!==SPECIAL.NONE) && Math.random()<0.0008*(1+Math.max(0,t.pollution-10)/30)) t.fire += 15 - fireCover;
+        if(t.fire>70 && (t.zone!==ZONE.NONE || t.special!==SPECIAL.NONE)){
+          // burn down
+          t.zone = ZONE.NONE; t.special=SPECIAL.NONE; t.b=0; t.t = t.t & T.ROAD; t.u = t.u & (U.POWER|U.PIPE); t.pollution += 20; ui.log('A fire destroyed a building.');
+        }
+      }
+    }
+
+    function budgetTick(){
+      const pop = world.popR + world.popC + world.popI;
+      const income = Math.round(pop * (world.taxRate/100) * 8);
+      // service costs
+      let roads=0, svc=0, util=0;
+      for(let i=0;i<world.tiles.length;i++){
+        const t=world.tiles[i];
+        if(t.t&T.ROAD) roads += 1;
+        if(t.u&(U.POWER|U.PIPE)) util += 0.5;
+        if(t.special===SPECIAL.FIRE||t.special===SPECIAL.POLICE||t.special===SPECIAL.SCHOOL) svc += 40;
+        if(t.special===SPECIAL.POWER_PLANT) svc += 150; if(t.special===SPECIAL.WATER_PUMP) svc += 60;
+      }
+      const expenses = Math.round(roads*0.2 + util + svc);
+      const delta = income - expenses;
+      world.money += delta;
+      const monthly = document.getElementById('monthly');
+      monthly.textContent = (delta>=0? '+$':'-$') + Math.abs(delta);
+      monthly.className = 'pill ' + (delta>=0? '' : 'neg');
+    }
+
+    function recompute(){
+      computePower();
+      computeWater();
+      simulateTraffic();
+      simulateExternalities();
+      computeLandValue();
+      developZones();
+    }
+
+    // Building
+    function costOf(tool){ return Tools.find(t=>t.id===tool)?.cost ?? 0; }
+    function trySpend(cost){ if(world.money >= cost){ world.money -= cost; return true; } ui.log('Insufficient funds.'); return false; }
+    function applyBrush(x,y,fn){ const b = ui.brush; for(let dy=0; dy<b; dy++) for(let dx=0; dx<b; dx++){ const nx=x+dx, ny=y+dy; if(inb(nx,ny)) fn(nx,ny); } }
+
+    function bulldoze(x,y){ const t=world.tiles[idx(x,y)]; if(t.water) return; t.zone=ZONE.NONE; t.special=SPECIAL.NONE; t.b=0; t.t=T.NONE; t.u=U.NONE; }
+    function place(x,y){
+      const t=world.tiles[idx(x,y)];
+      if(t.water) return false;
+      switch(ui.tool){
+        case 'bulldoze': bulldoze(x,y); return true;
+        case 'raise': t.h = clamp(t.h+1,0,12); t.water = t.h<=SEA; return true;
+        case 'lower': t.h = clamp(t.h-1,0,12); t.water = t.h<=SEA; return true;
+        case 'smooth': {
+          let s=t.h,c=1; for4(x,y,(nx,ny)=>{ if(!inb(nx,ny)) return; s+=world.tiles[idx(nx,ny)].h; c++; }); t.h = Math.round(s/c); t.water=t.h<=SEA; return true; }
+        case 'road': t.t = t.t|T.ROAD; return true;
+        case 'rail': t.t = t.t|T.RAIL; return true;
+        case 'powerline': t.u = t.u|U.POWER; return true;
+        case 'pipe': t.u = t.u|U.PIPE; return true;
+        case 'park': t.zone = ZONE.PARK; t.special=SPECIAL.NONE; t.b=0; return true;
+        case 'res': t.zone = ZONE.RES; t.special=SPECIAL.NONE; t.b=0; return true;
+        case 'com': t.zone = ZONE.COM; t.special=SPECIAL.NONE; t.b=0; return true;
+        case 'ind': t.zone = ZONE.IND; t.special=SPECIAL.NONE; t.b=0; return true;
+        case 'powerplant': t.special=SPECIAL.POWER_PLANT; t.zone=ZONE.SPECIAL; t.b=0; return true;
+        case 'waterpump': t.special=SPECIAL.WATER_PUMP; t.zone=ZONE.SPECIAL; t.b=0; return true;
+        case 'fire': t.special=SPECIAL.FIRE; t.zone=ZONE.SPECIAL; t.b=0; return true;
+        case 'police': t.special=SPECIAL.POLICE; t.zone=ZONE.SPECIAL; t.b=0; return true;
+        case 'school': t.special=SPECIAL.SCHOOL; t.zone=ZONE.SPECIAL; t.b=0; return true;
+      }
+      return false;
+    }
+
+    function updateCostPreview(){
+      const span = document.getElementById('costPreview');
+      span.textContent = `$${costOf(ui.tool) * ui.brush*ui.brush}`;
+    }
+
+    // Input
+    let hoverTile = null; let painting=false; let currentDrag=null; let lastPaintTime=0;
+    canvas.addEventListener('mousemove', (e)=>{
+      if(cam.dragging){ const dx=e.clientX-cam.lx, dy=e.clientY-cam.ly; cam.x -= dx/cam.scale; cam.y -= dy/cam.scale; cam.lx=e.clientX; cam.ly=e.clientY; return; }
+      const [tx,ty] = screenToTile(e.offsetX,e.offsetY); hoverTile = [tx,ty]; if(painting){
+        const now = performance.now(); if(now - lastPaintTime > 12){ dragPaint(tx,ty); lastPaintTime = now; }
+      }
+    });
+    canvas.addEventListener('contextmenu', (e)=>{ e.preventDefault(); });
+    canvas.addEventListener('mousedown', (e)=>{
+      if(e.button===1){ /* middle */ cam.dragging=true; cam.lx=e.clientX; cam.ly=e.clientY; return; }
+      if(e.button===2){ /* right */ cam.dragging=true; cam.lx=e.clientX; cam.ly=e.clientY; return; }
+      const [tx,ty] = screenToTile(e.offsetX,e.offsetY); if(!inb(tx,ty)) return;
+      if(ui.query){ queryAt(tx,ty); return; }
+      painting=true; currentDrag=[[tx,ty],[tx,ty]]; dragPaint(tx,ty,true);
+    });
+    window.addEventListener('mouseup', ()=>{ cam.dragging=false; if(painting){ finalizeDrag(); } painting=false; currentDrag=null; });
+    canvas.addEventListener('wheel', (e)=>{ const prev=cam.scale; cam.scale=clamp(cam.scale*(e.deltaY<0?1.1:0.9), 0.5, 4.0); const [mx,my]=[e.offsetX,e.offsetY]; const [tx,ty]=screenToTile(mx,my); const [sx,sy]=worldToScreen(tx+0.5,ty+0.5); cam.x += (mx-sx)/cam.scale; cam.y += (my-sy)/cam.scale; e.preventDefault(); });
+    window.addEventListener('keydown', (e)=>{
+      const k = e.key.toLowerCase();
+      // tool hotkeys
+      const found = Tools.find(t=>t.key.toLowerCase()===k);
+      if(found){ ui.setTool(found.id); updateCostPreview(); return; }
+      if(k==='r'){ cam.x=SIZE*TILE/2; cam.y=SIZE*TILE/2; cam.scale=2.0; }
+      if(k==='q'){ ui.setTool('query'); }
+      if(k===' '){ togglePause(); }
+    });
+
+    function dragPaint(tx,ty,first=false){ if(!currentDrag) currentDrag=[[tx,ty],[tx,ty]]; currentDrag[1]=[tx,ty]; if(first) currentDrag[0]=[tx,ty]; }
+    function finalizeDrag(){ if(!currentDrag) return; const [ax1,ay1]=currentDrag[0], [ax2,ay2]=currentDrag[1]; const x1=Math.min(ax1,ax2), y1=Math.min(ay1,ay2), x2=Math.max(ax1,ax2), y2=Math.max(ay1,ay2); const b=ui.brush; const total = (x2-x1+1)*(y2-y1+1)*b*b*costOf(ui.tool); if(total>0 && !trySpend(total)) { ui.log('Build canceled.'); return; } for(let y=y1; y<=y2; y+=b){ for(let x=x1; x<=x2; x+=b){ applyBrush(x,y, place); } } recompute(); }
+
+    function queryAt(x,y){ const t=world.tiles[idx(x,y)]; const parts=[]; parts.push(`Tile ${x},${y}`); parts.push(`Elev ${t.h}${t.water?' (water)':''}`); if(t.zone===ZONE.RES) parts.push(`Residential L${t.b+1}`); if(t.zone===ZONE.COM) parts.push(`Commercial L${t.b+1}`); if(t.zone===ZONE.IND) parts.push(`Industrial L${t.b+1}`); if(t.zone===ZONE.PARK) parts.push('Park'); if(t.special!==SPECIAL.NONE){ parts.push(['','Power Plant','Water Pump','Fire','Police','School'][t.special]); }
+      parts.push(`Road:${(t.t&T.ROAD)?'Y':'N'} Rail:${(t.t&T.RAIL)?'Y':'N'} Pwr:${(t.u&U.POWER)?'Y':'N'} Pipe:${(t.u&U.PIPE)?'Y':'N'}`);
+      parts.push(`Powered:${t.powered?'Y':'N'} Watered:${t.watered?'Y':'N'}`);
+      parts.push(`Pollution:${t.pollution.toFixed(0)} Crime:${t.crime.toFixed(0)} Traffic:${t.traffic.toFixed(0)} Land:${t.land}`);
+      ui.log(parts.join(' | '));
+    }
+
+    function togglePause(){ const btns = document.querySelectorAll('#topbar .speed button'); if(world.speed>0){ world.speed=0; } else { world.speed=1.0; } btns.forEach(b=> b.classList.toggle('active', parseFloat(b.dataset.speed||'0')===world.speed)); }
+
+    // Save / Load
+    function serialize(){ return JSON.stringify({ world, tiles: world.tiles }); }
+    function deserialize(s){ try{ const o=JSON.parse(s); Object.assign(world, o.world); const arr = o.tiles; for(let i=0;i<world.tiles.length;i++){ Object.assign(world.tiles[i], arr[i]); } ui.log('Loaded city.'); recompute(); }catch(e){ ui.log('Load failed.'); } }
+
+    // UI wiring
+    document.getElementById('brush').addEventListener('change', (e)=>{ ui.brush=parseInt(e.target.value); updateCostPreview(); });
+    document.getElementById('overlay').addEventListener('change', (e)=>{ ui.setOverlay(e.target.value); renderOverlayLegend(); });
+    document.getElementById('queryBtn').addEventListener('click', ()=> ui.setTool('query'));
+    document.getElementById('helpBtn').addEventListener('click', ()=> ui.showHelp());
+    document.getElementById('newMap').addEventListener('click', ()=>{ if(confirm('Start new map? Unsaved progress will be lost.')){ seedMap(); world.money=START_MONEY; world.month=0; ui.log('New city founded.'); recompute(); } });
+    document.getElementById('saveBtn').addEventListener('click', ()=>{ localStorage.setItem('micropolis_save', serialize()); ui.log('Saved to localStorage.'); });
+    document.getElementById('loadBtn').addEventListener('click', ()=>{ const s=localStorage.getItem('micropolis_save'); if(s) deserialize(s); else ui.log('No save found.'); });
+    document.getElementById('taxRate').addEventListener('change', (e)=>{ world.taxRate=parseFloat(e.target.value)||7; ui.log(`Tax rate set to ${world.taxRate}%`); });
+    document.querySelectorAll('#topbar .speed button').forEach(btn=> btn.addEventListener('click', ()=>{ document.querySelectorAll('#topbar .speed button').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); world.speed=parseFloat(btn.dataset.speed||'1'); }));
+
+    function renderOverlayLegend(){
+      const el = document.getElementById('overlayLegend');
+      const v = ui.overlay; el.innerHTML='';
+      const add = (k,desc)=>{ const d=document.createElement('div'); d.textContent=`${k}: ${desc}`; el.appendChild(d); };
+      if(v==='power') add('Yellow','Powered');
+      if(v==='water') add('Blue','Watered');
+      if(v==='traffic') add('Orange','Heavier traffic');
+      if(v==='pollution') add('Gray','Dirtier');
+      if(v==='crime') add('Pink','More crime');
+      if(v==='land') add('Red→Green','Low→High value');
+      if(v==='zones') add('Colors','Zone types');
+      if(v==='fire') add('Red','Fires');
+    }
+
+    // HUD update loop
+    function hud(){
+      document.getElementById('money').textContent = `$${world.money.toLocaleString()}`;
+      document.getElementById('datePill').textContent = gameDate();
+      const pop = world.popR + world.popC + world.popI; document.getElementById('popPill').textContent = `Pop ${pop.toLocaleString()}`;
+      setTimeout(hud, 200);
+    }
+
+    // Time and sim loop
+    let acc = 0; let last = performance.now();
+    function tick(){
+      const now = performance.now(); const dt = (now-last)/1000; last = now;
+      acc += dt * (world.speed||0);
+      // simulation sub-steps
+      if(acc > 0.5){ recompute(); acc = 0.0; }
+      // monthly budget
+      if(world.speed>0){
+        const monthStep = dt * world.speed / MONTH_SECONDS;
+        world._mAcc = (world._mAcc||0) + monthStep;
+        if(world._mAcc >= 1){ world.month += 1; world._mAcc -= 1; budgetTick(); }
+      }
+      requestAnimationFrame(tick);
+    }
+
+    // bootstrap
+    function init(){
+      resize(); renderTools(); renderOverlayLegend();
+      seedMap(); recompute(); hud(); render(); tick();
+      ui.log('Welcome! Build roads, a power plant, and zone R/C/I.');
+    }
+    init();
+  })();
+  </script>
+  </body>
+  </html>
