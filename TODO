@@ -1,8 +1,11 @@
-- The overlays don't display anything interesting.
-- Let's get some more music, taking inspiration from the name "Lowest ROAR".
-- Simulate an ecology of fauna too.
-- Day/night cycle isn't very visible to people.
-- For a big update, include seasonal color changes, beautiful landscapes inspired by idyllic landscape paintings, perhaps impressionists.
-- The whole game doesn't handle window resizing very well.
-- Waves crashing on the shore have disappeared.  Let's restore them.
-- Simulate traffic flow, and draw traffic on roads in proportion to their utilization and direction.
+- The overlays should display interesting information related to each in game system.
+- We need more music tracks by the musician "Lowest ROAR", a low-fi fan of LOW ROAR.
+- The game simulates fauna in its ecology too.
+- Day/night cycle should be visible to players.
+- Color changes should happen seasonally according to the mid-Atlantic climate we're set in.
+- The landscapes are beautiful, impressionistic, idyllic.
+- The game handles resizing well, including all overlays.
+- Waves lap on the shores of bodies of water not surrounded by land.
+- Traffic flow is simulated, and drawn on roads in proportion to their utilization in that network.
+- Boats look like a child's drawing of a boat: a semicircle hull, with a triangle sail above.
+- Boats can leave the edge of the screen without creating shipwrecks.
