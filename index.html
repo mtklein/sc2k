@@ -162,7 +162,7 @@
 
   <script>
   ;(() => {
-    const VERSION = 'v4.3';
+    const VERSION = 'v5.0';
     const SIZE = 96; // map tiles per side
     const TILE = 16; // base tile draw size at scale=1
     const SEA = 3;   // sea level height
@@ -289,6 +289,14 @@
     function for4(x,y,fn){ fn(x+1,y); fn(x-1,y); fn(x,y+1); fn(x,y-1); }
 
     function gameDate(){ const year = 1900 + Math.floor(world.month/12); const m = world.month%12; const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[m]} ${year}`; }
+
+    function currentSeason(){
+      const m = world.month % 12;
+      if(m===11 || m===0 || m===1) return 0; // winter
+      if(m>=2 && m<=4) return 1; // spring
+      if(m>=5 && m<=7) return 2; // summer
+      return 3; // fall
+    }
 
     function seedMap() {
       // Diamond-square-ish simple fractal for height
@@ -435,9 +443,24 @@
     function colLerp(a,b,t){ const pa=parseInt(a.slice(1),16), pb=parseInt(b.slice(1),16); const r=Math.round(((pa>>16)&255)*(1-t)+((pb>>16)&255)*t); const g=Math.round(((pa>>8)&255)*(1-t)+((pb>>8)&255)*t); const bl=Math.round((pa&255)*(1-t)+((pb&255))*t); return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${bl.toString(16).padStart(2,'0')}`; }
 
     const particles = [];
+    const weather = [];
     const birds = [];
     const boats = [];
     const shipwrecks = [];
+
+    function spawnRain(){
+      const x = Math.random()*canvas.clientWidth;
+      const [tx] = screenToTile(x,0);
+      const w = windAt(tx,0);
+      weather.push({ x, y:-5, vx:w[0]*50, vy:40+w[1]*20, a:0.8, type:'rain', color:'#9ec9ff' });
+    }
+
+    function spawnSnow(){
+      const x = Math.random()*canvas.clientWidth;
+      const [tx] = screenToTile(x,0);
+      const w = windAt(tx,0);
+      weather.push({ x, y:-5, vx:w[0]*20, vy:10+w[1]*10, a:1.0, r:1.5, type:'snow', color:'#ffffff' });
+    }
     function spawnWreck(sx,sy,rot){ shipwrecks.push({ x:sx, y:sy, r:rot, a:1.0 }); if(shipwrecks.length>60) shipwrecks.shift(); }
     function spawnBoat(){
       // choose an ocean tile near shore in view
@@ -479,6 +502,9 @@
     }
     function render(){
       const anim = Math.max(0, world.speed/10);
+      const season = currentSeason();
+      if(season===1 || season===3){ if(weather.length<200 && Math.random()<0.5) spawnRain(); }
+      if(season===0){ if(weather.length<200 && Math.random()<0.3) spawnSnow(); }
       ctx.clearRect(0,0,canvas.clientWidth, canvas.clientHeight);
       const s = TILE*cam.scale;
       const [minx,miny] = screenToTile(0,0);
@@ -495,7 +521,14 @@
             if(t.ocean){ base = colLerp('#113a59','#0c2238', wave); }
             else { base = '#17324a'; }
           } else {
-            base = colLerp('#2b4c2b','#203a20', t.h/10);
+            const landPal = [
+              ['#e0e2e0','#b5b8b5'],
+              ['#4f8a39','#3b6b29'],
+              ['#2b4c2b','#203a20'],
+              ['#b07c3b','#704b1d']
+            ];
+            const [c1,c2] = landPal[season];
+            base = colLerp(c1,c2,t.h/10);
           }
           drawTile(x,y,base);
         }
@@ -599,7 +632,17 @@
             if(t.zone===ZONE.IND && t.b>0 && Math.random()<0.05){ particles.push({ x:sx+ssz*0.5+Math.random()*6-3, y:sy+ssz*0.2, vx:(Math.random()-0.5)*0.2, vy:-0.3-Math.random()*0.2, a:0.6, r:1.5+Math.random()*2 }); }
           }
           // draw forest trees as dots on empty land
-          if(!t.water && t.zone===ZONE.NONE && t.trees>5){ const n = Math.min(4, Math.floor(t.trees/20)); ctx.fillStyle='#1f6a2c'; for(let k=0;k<n;k++){ ctx.beginPath(); ctx.arc(sx+3+3*k, sy+ssz-4-2*k, 2, 0, Math.PI*2); ctx.fill(); } }
+          if(!t.water && t.zone===ZONE.NONE && t.trees>5){
+            const n = Math.min(4, Math.floor(t.trees/20));
+            const treeCol = ['#ffffff','#2e8b2e','#1f6a2c','#b0651e'][season];
+            ctx.fillStyle = treeCol;
+            const wv = windAt(x,y);
+            for(let k=0;k<n;k++){
+              ctx.beginPath();
+              ctx.arc(sx+3+3*k + wv[0]*2, sy+ssz-4-2*k + wv[1]*2, 2, 0, Math.PI*2);
+              ctx.fill();
+            }
+          }
           // fires overlay visual
           if(t.fire>0){ ctx.globalAlpha = clamp(t.fire/100, 0.2, 0.9); ctx.fillStyle = '#ff3b1a'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
         }
@@ -607,6 +650,31 @@
 
       // particles
       for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx*anim; p.y+=p.vy*anim; if(p.g){ p.vy += p.g*anim; } p.a-=0.012*anim; p.r+=0.01*anim; if(p.a<=0){ particles.splice(i,1); continue; } ctx.globalAlpha = Math.max(0, p.a); ctx.fillStyle=p.color||'#9a9a9a'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
+
+      // weather
+      for(let i=weather.length-1;i>=0;i--){
+        const p = weather[i];
+        p.x += p.vx*anim;
+        p.y += p.vy*anim;
+        p.a -= 0.004*anim;
+        if(p.y > canvas.clientHeight+20) p.a = 0;
+        if(p.a <= 0){ weather.splice(i,1); continue; }
+        ctx.globalAlpha = Math.max(0, p.a);
+        if(p.type==='rain'){
+          ctx.strokeStyle = p.color;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(p.x - p.vx*0.1, p.y - p.vy*0.1);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r||1.5, 0, Math.PI*2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
       // boats
       for(let i=boats.length-1;i>=0;i--){ const b=boats[i];
         // follow wind, tack slightly

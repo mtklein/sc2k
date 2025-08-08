@@ -12,3 +12,4 @@
 - Boats are simple hull-and-sail drawings that sail offscreen without crashing.
 - The game handles window resizing smoothly, keeping overlays aligned.
 - Includes music and sound effects.
+- Seasonal cycle paints the land in changing colors with wind, rain, and snowy winters.
