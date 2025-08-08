@@ -110,6 +110,11 @@
             <option value="land">Land Value</option>
             <option value="zones">Zones</option>
             <option value="fire">Fires</option>
+            <option value="moisture">Moisture</option>
+            <option value="temp">Temperature</option>
+            <option value="forest">Forest</option>
+            <option value="o2">O2</option>
+            <option value="co2">CO2</option>
           </select>
           <button id="queryBtn">Query (Q)</button>
         </div>
@@ -157,10 +162,11 @@
 
   <script>
   ;(() => {
-    const VERSION = 'v4.1';
+    const VERSION = 'v4.2';
     const SIZE = 96; // map tiles per side
     const TILE = 16; // base tile draw size at scale=1
     const SEA = 3;   // sea level height
+    const DAY_SECONDS = 30; // real seconds per in-game day at 1x
     const START_MONEY = 20000;
     const MONTH_SECONDS = 12; // real seconds per in-game month at 1x
 
@@ -177,11 +183,14 @@
       { id: 'com', label: 'Commercial', key: '2', cost: 120, icon: '🏬' },
       { id: 'ind', label: 'Industrial', key: '3', cost: 80, icon: '🏭' },
       { id: 'park', label: 'Park', key: 'p', cost: 20, icon: '🌳' },
+      { id: 'farm', label: 'Farm', key: 'm', cost: 60, icon: '🌾' },
       { id: 'powerplant', label: 'Power Plant', key: 'o', cost: 3000, icon: '🔋' },
       { id: 'waterpump', label: 'Water Pump', key: 'u', cost: 1200, icon: '💧' },
       { id: 'fire', label: 'Fire Station', key: 'f', cost: 600, icon: '🚒' },
       { id: 'police', label: 'Police', key: 'c', cost: 600, icon: '🚓' },
       { id: 'school', label: 'School', key: 's', cost: 400, icon: '🏫' },
+      { id: 'ranch', label: 'Ranch', key: 'h', cost: 120, icon: '🐄' },
+      { id: 'forestry', label: 'Forestry', key: 'y', cost: 150, icon: '🌲' },
       { id: 'query', label: 'Query', key: 'q', cost: 0, icon: '🔍' },
     ];
 
@@ -203,6 +212,7 @@
       IND: 3,
       PARK: 4,
       SPECIAL: 5, // power plant, etc.
+      FARM: 6,
     };
 
     const SPECIAL = {
@@ -212,6 +222,8 @@
       FIRE: 3,
       POLICE: 4,
       SCHOOL: 5,
+      RANCH: 6,
+      FORESTRY: 7,
     };
 
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -236,6 +248,9 @@
         crime: 0,
         fire: 0,
         land: 0,
+        trees: 0,
+        moisture: 0,
+        temp: 20,
       };
     }
 
@@ -244,11 +259,13 @@
       popR: 0, popC: 0, popI: 0,
       money: START_MONEY,
       month: 0,
+      dayPhase: 0, // 0..1
       taxRate: 7.0,
       demandR: 0, demandC: 0, demandI: 0,
       powerCapacity: 0,
       waterCapacity: 0,
       speed: 1.0,
+      eco: { o2: 21.0, co2: 0.04, food: 0, wood: 0 },
     };
 
     const cam = { x: SIZE*TILE/2, y: SIZE*TILE/2, scale: 2.0, dragging: false, lx:0, ly:0 };
@@ -419,6 +436,8 @@
     const particles = [];
     const birds = [];
     const boats = [];
+    const shipwrecks = [];
+    function spawnWreck(sx,sy,rot){ shipwrecks.push({ x:sx, y:sy, r:rot, a:1.0 }); if(shipwrecks.length>60) shipwrecks.shift(); }
     function spawnBoat(){
       // choose an ocean tile near shore in view
       const [minx,miny] = screenToTile(0,0); const [maxx,maxy] = screenToTile(canvas.clientWidth,canvas.clientHeight);
@@ -501,10 +520,8 @@
       for(let y=ay;y<=by;y++){
         for(let x=ax;x<=bx;x++){
           const t = world.tiles[idx(x,y)]; if(!t.ocean) continue; const [sx,sy]=worldToScreen(x,y); const ssz=s;
-          // wind field (mid-Atlantic westerlies + small variation)
-          const wx = 0.9 + 0.2*Math.sin(y*0.08 + time.t*0.2);
-          const wy = 0.1 + 0.2*Math.sin(x*0.06 - time.t*0.15);
-          let wl = Math.hypot(wx,wy); let wind = [wx/wl, wy/wl];
+          // wind field
+          const wind = windAt(x,y);
           // adjust near coast to push waves towards shore
           let near=false; let nxv=0, nyv=0; for4(x,y,(nx,ny)=>{ if(!inb(nx,ny)) return; if(!world.tiles[idx(nx,ny)].water){ near=true; nxv += nx-x; nyv += ny-y; } });
           let dir = wind; if(near){ const nl = Math.hypot(nxv,nyv)||1; dir = [(wind[0]*0.6 + (nxv/nl)*0.4), (wind[1]*0.6 + (nyv/nl)*0.4)]; const dl=Math.hypot(dir[0],dir[1])||1; dir=[dir[0]/dl, dir[1]/dl]; }
@@ -565,6 +582,7 @@
             if(t.zone===ZONE.COM) col = ['#6a86a8','#5c789a','#3e5d84'][t.b]||'#6a86a8';
             if(t.zone===ZONE.IND) col = ['#a8a06a','#9a905c','#847e3e'][t.b]||'#a8a06a';
             if(t.zone===ZONE.PARK) col = '#2fa24f';
+            if(t.zone===ZONE.FARM) col = ['#a67c52','#b68c62','#c69c72'][t.b]||'#a67c52';
             if(t.special!==SPECIAL.NONE) col = '#a86a6a';
             // growth animation pulse
             let inset = 2; if(t.grow && t.grow>0){ inset = 2 + Math.sin(time.t*10)*1.2; t.grow = Math.max(0, t.grow - 0.02); }
@@ -574,9 +592,13 @@
             if(t.special===SPECIAL.FIRE){ ctx.fillStyle='#ff6b6b'; ctx.fillRect(sx+ssz*0.25,sy+ssz*0.25,ssz*0.5,ssz*0.5);} 
             if(t.special===SPECIAL.POLICE){ ctx.fillStyle='#6b8bff'; ctx.fillRect(sx+ssz*0.25,sy+ssz*0.25,ssz*0.5,ssz*0.5);} 
             if(t.special===SPECIAL.SCHOOL){ ctx.fillStyle='#f7c36a'; ctx.fillRect(sx+ssz*0.25,sy+ssz*0.25,ssz*0.5,ssz*0.5);} 
+            if(t.special===SPECIAL.RANCH){ ctx.fillStyle='#d8c8a8'; ctx.fillRect(sx+ssz*0.25,sy+ssz*0.25,ssz*0.5,ssz*0.5); }
+            if(t.special===SPECIAL.FORESTRY){ ctx.fillStyle='#2b6a3a'; ctx.fillRect(sx+ssz*0.25,sy+ssz*0.25,ssz*0.5,ssz*0.5); }
             // simple smoke from active industry
             if(t.zone===ZONE.IND && t.b>0 && Math.random()<0.05){ particles.push({ x:sx+ssz*0.5+Math.random()*6-3, y:sy+ssz*0.2, vx:(Math.random()-0.5)*0.2, vy:-0.3-Math.random()*0.2, a:0.6, r:1.5+Math.random()*2 }); }
           }
+          // draw forest trees as dots on empty land
+          if(!t.water && t.zone===ZONE.NONE && t.trees>5){ const n = Math.min(4, Math.floor(t.trees/20)); ctx.fillStyle='#1f6a2c'; for(let k=0;k<n;k++){ ctx.beginPath(); ctx.arc(sx+3+3*k, sy+ssz-4-2*k, 2, 0, Math.PI*2); ctx.fill(); } }
           // fires overlay visual
           if(t.fire>0){ ctx.globalAlpha = clamp(t.fire/100, 0.2, 0.9); ctx.fillStyle = '#ff3b1a'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
         }
@@ -585,11 +607,31 @@
       // particles
       for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx*anim; p.y+=p.vy*anim; if(p.g){ p.vy += p.g*anim; } p.a-=0.012*anim; p.r+=0.01*anim; if(p.a<=0){ particles.splice(i,1); continue; } ctx.globalAlpha = Math.max(0, p.a); ctx.fillStyle=p.color||'#9a9a9a'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
       // boats
-      for(let i=boats.length-1;i>=0;i--){ const b=boats[i]; b.x+=b.vx*anim; b.y+=b.vy*anim; // drift; fade slightly
-        const [sx,sy]=worldToScreen(b.x, b.y); ctx.fillStyle='#f2f6fb'; ctx.beginPath(); ctx.moveTo(sx, sy-2); ctx.lineTo(sx-4, sy+2); ctx.lineTo(sx+4, sy+2); ctx.closePath(); ctx.fill(); if(!inb(Math.floor(b.x), Math.floor(b.y)) || !world.tiles[idx(Math.floor(b.x),Math.floor(b.y))].ocean){ boats.splice(i,1); }
+      for(let i=boats.length-1;i>=0;i--){ const b=boats[i];
+        // follow wind, tack slightly
+        const w = windAt(Math.floor(b.x), Math.floor(b.y)); const angle = Math.atan2(w[1], w[0]); const tack = (b.tb||1); const targetAngle = angle + (tack*Math.PI/3)* (Math.random()<0.02? (b.tb*=-1,1):1);
+        const speed = 0.12; const tx = Math.cos(targetAngle)*speed, ty = Math.sin(targetAngle)*speed;
+        b.vx = b.vx*0.9 + tx*0.1; b.vy = b.vy*0.9 + ty*0.1;
+        const vmax = 0.2; const vm = Math.hypot(b.vx,b.vy); if(vm>vmax){ b.vx*=vmax/vm; b.vy*=vmax/vm; }
+        b.x+=b.vx*anim; b.y+=b.vy*anim;
+        // draw semicircle hull facing motion
+        const [sx,sy]=worldToScreen(b.x, b.y); const heading = Math.atan2(b.vy, b.vx); const r=5;
+        ctx.save(); ctx.translate(sx,sy); ctx.rotate(heading);
+        ctx.fillStyle='#fdf9f3'; ctx.beginPath(); ctx.arc(0,0,r, Math.PI/2, -Math.PI/2, true); ctx.lineTo(-r, r); ctx.lineTo(-r, -r); ctx.closePath(); ctx.fill();
+        ctx.restore();
+        // wreck conditions
+        const ix=Math.floor(b.x), iy=Math.floor(b.y); const inbnd=inb(ix,iy);
+        const nearLand = inbnd && (!world.tiles[idx(ix,iy)].ocean || [[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy])=> inb(ix+dx,iy+dy) && !world.tiles[idx(ix+dx,iy+dy)].water));
+        const rareAtSea = Math.random() < 0.00002*anim;
+        if(!inbnd || nearLand || rareAtSea){
+          spawnWreck(sx, sy, heading + Math.PI);
+          boats.splice(i,1);
+        }
       }
       // birds
       for(let i=birds.length-1;i>=0;i--){ const b=birds[i]; b.x+=b.vx*anim; b.y+=b.vy*anim; b.t+=0.2*anim; const wing = Math.sin(b.t)*3; ctx.strokeStyle='#ffffff'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(b.x-4, b.y); ctx.quadraticCurveTo(b.x-2, b.y-wing, b.x, b.y); ctx.quadraticCurveTo(b.x+2, b.y-wing, b.x+4, b.y); ctx.stroke(); if(b.x > canvas.clientWidth+20) birds.splice(i,1); }
+      // shipwrecks
+      for(let i=shipwrecks.length-1;i>=0;i--){ const w=shipwrecks[i]; ctx.save(); ctx.translate(w.x,w.y); ctx.rotate(w.r); ctx.globalAlpha = w.a; ctx.fillStyle='#7a5a3a'; ctx.fillRect(-6,-2,12,4); ctx.fillStyle='#3a2a1a'; ctx.fillRect(-2,-4,4,2); ctx.restore(); w.a = Math.max(0.2, w.a - 0.0005*anim); }
 
       // overlay heatmaps
       if(ui.overlay!=='none'){
@@ -611,9 +653,18 @@
               if(t.special!==SPECIAL.NONE){ ctx.globalAlpha=0.25; ctx.fillStyle='#a86a6a'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
             }
             if(ui.overlay==='fire' && t.fire>0){ ctx.globalAlpha = clamp(t.fire/100,0.2,0.9); ctx.fillStyle='#ff3b1a'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+            if(ui.overlay==='moisture'){ const v = clamp(t.moisture,0,1); if(v>0){ ctx.globalAlpha=0.25; ctx.fillStyle=colLerp('#0b1f2e','#4db4ff', v); ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; } }
+            if(ui.overlay==='temp'){ const v = clamp((t.temp-0)/40,0,1); ctx.globalAlpha=0.25; ctx.fillStyle=colLerp('#1e3a8a','#ef4444', v); ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+            if(ui.overlay==='forest'){ const v = clamp(t.trees/100,0,1); if(v>0){ ctx.globalAlpha=0.25; ctx.fillStyle=colLerp('#1b3a1b', '#2fa24f', v); ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; } }
+            if(ui.overlay==='o2'){ const v = clamp(world.eco.o2/25,0,1); ctx.globalAlpha=0.2; ctx.fillStyle='#7cecf4'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
+            if(ui.overlay==='co2'){ const v = clamp(world.eco.co2/0.2,0,1); ctx.globalAlpha=0.2; ctx.fillStyle='#b57ce9'; ctx.fillRect(sx,sy,ssz,ssz); ctx.globalAlpha=1; }
           }
         }
       }
+
+      // Night/day tint
+      const dayL = 0.7 + 0.3*Math.max(0, Math.cos(world.dayPhase*2*Math.PI));
+      if(dayL<0.99){ ctx.fillStyle = `rgba(0,0,0,${clamp(1-dayL,0,0.6)})`; ctx.fillRect(0,0,canvas.clientWidth, canvas.clientHeight); }
 
       // HUD
       if(hoverTile){ const [hx,hy]=hoverTile; if(inb(hx,hy)){
@@ -772,6 +823,53 @@
       }
     }
 
+    // Ecology helpers and simulation
+    function windAt(x,y){ const wx = 0.9 + 0.2*Math.sin(y*0.08 + time.t*0.2); const wy = 0.1 + 0.2*Math.sin(x*0.06 - time.t*0.15); const wl=Math.hypot(wx,wy)||1; return [wx/wl, wy/wl]; }
+    function computeTempAndMoisture(){
+      for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+        const t=world.tiles[idx(x,y)]; const ny=y/SIZE; const coastal = t.ocean?0.0: Math.min(1, Math.abs(distanceToOcean(x,y)/8));
+        const base = 28 - 16*ny; const diurnal = (Math.cos(world.dayPhase*2*Math.PI)*6) * (0.4 + 0.6*(1-coastal));
+        t.temp = base + diurnal;
+        const dWater = Math.min(distanceToWater(x,y)/12, 1);
+        t.moisture = clamp(0.15 + (1-dWater)*0.7, 0, 1);
+      }
+      function distanceToWater(x,y){ let d=9999; for(let dy=-6;dy<=6;dy++) for(let dx=-6;dx<=6;dx++){ const nx=x+dx, ny=y+dy; if(!inb(nx,ny)) continue; if(world.tiles[idx(nx,ny)].water){ d=Math.min(d, Math.hypot(dx,dy)); } } return d===9999? 9999 : d; }
+      function distanceToOcean(x,y){ let d=9999; for(let dy=-6;dy<=6;dy++) for(let dx=-6;dx<=6;dx++){ const nx=x+dx, ny=y+dy; if(!inb(nx,ny)) continue; if(world.tiles[idx(nx,ny)].ocean){ d=Math.min(d, Math.hypot(dx,dy)); } } return d===9999? 9999 : d; }
+    }
+    function simulateEcologyMonthly(){
+      let food=0, wood=0; // simple yields
+      // global atmospheric adjustments
+      let deltaO2=0, deltaCO2=0;
+      for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+        const t=world.tiles[idx(x,y)];
+        if(t.water) continue;
+        // trees grow/shrink
+        const tempFactor = clamp(1 - Math.abs(t.temp-20)/18, 0, 1);
+        const moist = t.moisture;
+        const poll = clamp(t.pollution/100, 0, 1);
+        let growth = (moist*0.6 + tempFactor*0.4) * (1 - poll*0.7);
+        if(t.zone===ZONE.IND) growth *= 0.5;
+        t.trees = clamp((t.trees||0) + (growth*3 - 1.5), 0, 100);
+        // parks promote trees
+        if(t.zone===ZONE.PARK) t.trees = clamp(t.trees + 1.5, 0, 100);
+        // forestry harvest
+        if(t.special===SPECIAL.FORESTRY){ let cut = Math.min(t.trees, 4); t.trees -= cut; wood += cut*2; }
+        // farms produce food; consume moisture
+        if(t.zone===ZONE.FARM){ const yieldF = clamp(moist*tempFactor*6, 0, 6); food += yieldF; t.moisture = clamp(t.moisture - 0.1, 0, 1); }
+        if(t.special===SPECIAL.RANCH){ const yieldR = clamp(tempFactor*3 + moist*2, 0, 5); food += yieldR; }
+        // atmosphere exchange from trees and industry
+        deltaO2 += t.trees*0.002 - (t.zone===ZONE.IND? 0.02: 0);
+        deltaCO2 += (t.zone===ZONE.IND? 0.03: 0) - t.trees*0.0015;
+      }
+      world.eco.o2 = clamp(world.eco.o2 + deltaO2/ (SIZE*SIZE/100), 15, 25);
+      world.eco.co2 = clamp(world.eco.co2 + deltaCO2/ (SIZE*SIZE/100), 0.03, 0.2);
+      // convert a portion of resources into export income
+      const income = Math.round(food*2 + wood*1.5);
+      world.eco.food = (world.eco.food||0) + food;
+      world.eco.wood = (world.eco.wood||0) + wood;
+      return income;
+    }
+
     function budgetTick(){
       const pop = world.popR + world.popC + world.popI;
       const income = Math.round(pop * (world.taxRate/100) * 8);
@@ -784,8 +882,10 @@
         if(t.special===SPECIAL.FIRE||t.special===SPECIAL.POLICE||t.special===SPECIAL.SCHOOL) svc += 40;
         if(t.special===SPECIAL.POWER_PLANT) svc += 150; if(t.special===SPECIAL.WATER_PUMP) svc += 60;
       }
+      // ecology monthly updates and resource income
+      const ecoIncome = simulateEcologyMonthly();
       const expenses = Math.round(roads*0.2 + util + svc);
-      const delta = income - expenses;
+      const delta = income + ecoIncome - expenses;
       world.money += delta;
       const monthly = document.getElementById('monthly');
       monthly.textContent = (delta>=0? '+$':'-$') + Math.abs(delta);
@@ -796,6 +896,8 @@
       computePower();
       computeWater();
       computeOcean();
+      // update temperature and moisture baseline each recompute (cheap approximations)
+      computeTempAndMoisture();
       simulateTraffic();
       simulateExternalities();
       computeLandValue();
@@ -821,6 +923,7 @@
         case 'powerline': if(!t.water){ t.u = t.u|U.POWER; return true; } return false;
         case 'pipe': if(!t.water){ t.u = t.u|U.PIPE; return true; } return false;
         case 'park': if(!t.water){ t.zone = ZONE.PARK; t.special=SPECIAL.NONE; t.b=0; return true; } return false;
+        case 'farm': if(!t.water){ t.zone = ZONE.FARM; t.special=SPECIAL.NONE; t.b=0; return true; } return false;
         case 'res': if(!t.water){ t.zone = ZONE.RES; t.special=SPECIAL.NONE; t.b=0; return true; } return false;
         case 'com': if(!t.water){ t.zone = ZONE.COM; t.special=SPECIAL.NONE; t.b=0; return true; } return false;
         case 'ind': if(!t.water){ t.zone = ZONE.IND; t.special=SPECIAL.NONE; t.b=0; return true; } return false;
@@ -829,6 +932,8 @@
         case 'fire': if(!t.water){ t.special=SPECIAL.FIRE; t.zone=ZONE.SPECIAL; t.b=0; return true; } return false;
         case 'police': if(!t.water){ t.special=SPECIAL.POLICE; t.zone=ZONE.SPECIAL; t.b=0; return true; } return false;
         case 'school': if(!t.water){ t.special=SPECIAL.SCHOOL; t.zone=ZONE.SPECIAL; t.b=0; return true; } return false;
+        case 'ranch': if(!t.water){ t.special=SPECIAL.RANCH; t.zone=ZONE.SPECIAL; t.b=0; return true; } return false;
+        case 'forestry': if(!t.water){ t.special=SPECIAL.FORESTRY; t.zone=ZONE.SPECIAL; t.b=0; return true; } return false;
       }
       return false;
     }
@@ -937,6 +1042,11 @@
       if(v==='land') add('Red→Green','Low→High value');
       if(v==='zones') add('Colors','Zone types');
       if(v==='fire') add('Red','Fires');
+      if(v==='moisture') add('Blue','Higher soil moisture');
+      if(v==='temp') add('Blue→Red','Cooler→Warmer');
+      if(v==='forest') add('Green','More trees');
+      if(v==='o2') add('Cyan','Higher O2');
+      if(v==='co2') add('Purple','Higher CO2');
     }
 
     // HUD update loop
@@ -955,6 +1065,7 @@
       acc += dt * (world.speed||0);
       const anim = Math.max(0, world.speed/10);
       time.t += dt * anim;
+      world.dayPhase = (world.dayPhase + dt * anim / DAY_SECONDS) % 1;
       // simulation sub-steps
       if(acc > 0.5){ recompute(); acc = 0.0; }
       // monthly budget
