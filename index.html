@@ -126,7 +126,7 @@
     <div class="card">
       <div style="display:flex; justify-content: space-between; align-items:center; gap:8px; margin-bottom: 6px;">
         <h2>Micropolis+ — Quick Help</h2>
-        <button onclick="ui.hideHelp()">Close</button>
+        <button id="helpClose">Close</button>
       </div>
       <div class="small">Single-file city builder inspired by SimCity 2000. Includes a New Castle County, DE preset.</div>
       <h3>Goal</h3>
@@ -259,6 +259,8 @@
       showHelp(){ document.getElementById('help').style.display='flex'; },
       hideHelp(){ document.getElementById('help').style.display='none'; },
     };
+    // Expose for inline onclick in Help modal
+    window.ui = ui;
 
     function idx(x,y){ return y*SIZE + x; }
     function inb(x,y){ return x>=0 && x<SIZE && y>=0 && y<SIZE; }
@@ -337,17 +339,23 @@
           const y = cy+dy; if(!inb(x,y)) continue; const t=world.tiles[idx(x,y)]; t.h=SEA-1; t.water=true;
         }
       }
+      // Bridges across canal every ~20 tiles
+      for(let bx=10; bx<SIZE-10; bx+=20){ for(let dy=-1; dy<=1; dy++){ const y=cy+dy; for(let dx=-1; dx<=1; dx++){ const x=bx+dx; if(!inb(x,y)) continue; const t=world.tiles[idx(x,y)]; t.t = t.t|T.ROAD; }} }
       // Set sea-level water expansion on low tiles touching water
       for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
         const t=world.tiles[idx(x,y)];
         if(t.h<=SEA && !t.water){ let near=false; for4(x,y,(nx,ny)=>{ if(inb(nx,ny)&&world.tiles[idx(nx,ny)].water) near=true; }); if(near){ t.water=true; t.h=SEA-1; }}
       }
-      // Starter infrastructure near Wilmington area
+      // Starter infrastructure near Wilmington area and coherent arterial roads
       const pp = { x: 58, y: 18 };
       if(inb(pp.x,pp.y) && !world.tiles[idx(pp.x,pp.y)].water){ const t=world.tiles[idx(pp.x,pp.y)]; t.special=SPECIAL.POWER_PLANT; t.zone=ZONE.SPECIAL; }
-      for(let y=14;y<=24;y++) for(let x=48;x<=66;x++){
-        if(!inb(x,y)) continue; const t=world.tiles[idx(x,y)]; if(t.water) continue; if(x%2===0) t.t = t.t|T.ROAD; if(y%2===0) t.t = t.t|T.ROAD; if(Math.random()<0.2) t.u = t.u|U.POWER;
-      }
+      // Arterials: N-S and E-W grids around Wilmington
+      for(let y=12;y<=28;y+=2){ for(let x=46;x<=68;x++){ if(!inb(x,y)) continue; const t=world.tiles[idx(x,y)]; if(!t.water) t.t = t.t|T.ROAD; } }
+      for(let x=46;x<=68;x+=2){ for(let y=12;y<=28;y++){ if(!inb(x,y)) continue; const t=world.tiles[idx(x,y)]; if(!t.water) t.t = t.t|T.ROAD; } }
+      // A north-south corridor toward the canal (approx US-13)
+      for(let y=18;y<cy;y++){ const x=52; if(inb(x,y)){ const t=world.tiles[idx(x,y)]; t.t = t.t|T.ROAD; } }
+      // Power trunk
+      for(let y=pp.y; y<pp.y+10; y++){ const x=pp.x+2; if(inb(x,y)){ const t=world.tiles[idx(x,y)]; if(!t.water) t.u = t.u|U.POWER; }}
       // Water pump along canal
       const wp = { x: 40, y: cy-2 };
       if(inb(wp.x,wp.y) && !world.tiles[idx(wp.x,wp.y)].water){ const t=world.tiles[idx(wp.x,wp.y)]; t.special=SPECIAL.WATER_PUMP; t.zone=ZONE.SPECIAL; }
@@ -401,6 +409,21 @@
     function colLerp(a,b,t){ const pa=parseInt(a.slice(1),16), pb=parseInt(b.slice(1),16); const r=Math.round(((pa>>16)&255)*(1-t)+((pb>>16)&255)*t); const g=Math.round(((pa>>8)&255)*(1-t)+((pb>>8)&255)*t); const bl=Math.round((pa&255)*(1-t)+((pb&255))*t); return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${bl.toString(16).padStart(2,'0')}`; }
 
     const particles = [];
+    function spawnFireworks(){
+      const make = (x,y)=>{
+        for(let i=0;i<50;i++){
+          const a = Math.random()*Math.PI*2; const sp = 0.8+Math.random()*1.6;
+          particles.push({ x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp-0.5, a: 1.0, r: 1.5+Math.random()*1.5, color: ['#ff6b6b','#ffd36a','#6bc0ff','#b56bff'][i%4], g: 0.03 });
+        }
+      };
+      // Spawn 3-4 shows around the current view
+      const [minx,miny] = screenToTile(0,0); const [maxx,maxy] = screenToTile(canvas.clientWidth,canvas.clientHeight);
+      for(let k=0;k<4;k++){
+        const tx = clamp(irnd(maxx-minx)+minx, 0, SIZE-1); const ty = clamp(irnd(maxy-miny)+miny, 0, SIZE-1);
+        const [sx,sy] = worldToScreen(tx+0.5, ty+0.4);
+        make(sx, sy);
+      }
+    }
     function render(){
       ctx.clearRect(0,0,canvas.clientWidth, canvas.clientHeight);
       const s = TILE*cam.scale;
@@ -446,7 +469,9 @@
             if(t.zone===ZONE.IND) col = ['#a8a06a','#9a905c','#847e3e'][t.b]||'#a8a06a';
             if(t.zone===ZONE.PARK) col = '#2fa24f';
             if(t.special!==SPECIAL.NONE) col = '#a86a6a';
-            ctx.fillStyle = col; ctx.fillRect(sx+2,sy+2,ssz-4,ssz-4);
+            // growth animation pulse
+            let inset = 2; if(t.grow && t.grow>0){ inset = 2 + Math.sin(time.t*10)*1.2; t.grow = Math.max(0, t.grow - 0.02); }
+            ctx.fillStyle = col; ctx.fillRect(sx+inset,sy+inset,ssz-inset*2,ssz-inset*2);
             if(t.special===SPECIAL.POWER_PLANT){ ctx.fillStyle='#ffef70'; ctx.fillRect(sx+ssz*0.2,sy+ssz*0.2,ssz*0.6,ssz*0.6);} 
             if(t.special===SPECIAL.WATER_PUMP){ ctx.fillStyle='#6bc0ff'; ctx.beginPath(); ctx.arc(sx+ssz/2, sy+ssz/2, ssz*0.35, 0, Math.PI*2); ctx.fill(); }
             if(t.special===SPECIAL.FIRE){ ctx.fillStyle='#ff6b6b'; ctx.fillRect(sx+ssz*0.25,sy+ssz*0.25,ssz*0.5,ssz*0.5);} 
@@ -461,7 +486,7 @@
       }
 
       // particles
-      for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.a-=0.01; p.r+=0.02; if(p.a<=0){ particles.splice(i,1); continue; } ctx.globalAlpha = Math.max(0, p.a); ctx.fillStyle='#9a9a9a'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
+      for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; if(p.g){ p.vy += p.g; } p.a-=0.012; p.r+=0.01; if(p.a<=0){ particles.splice(i,1); continue; } ctx.globalAlpha = Math.max(0, p.a); ctx.fillStyle=p.color||'#9a9a9a'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
 
       // overlay heatmaps
       if(ui.overlay!=='none'){
@@ -565,8 +590,8 @@
         if(t.zone===ZONE.RES || t.zone===ZONE.COM || t.zone===ZONE.IND){
           const demand = t.zone===ZONE.RES? world.demandR : (t.zone===ZONE.COM? world.demandC : world.demandI);
           const desirability = demand + t.land + (t.powered?10:-20) + (t.watered?5:0) + (hasRoadAdj(x,y)?8:-30) - (t.pollution*0.3) - (t.crime*0.3);
-          if(desirability > 10 && t.b<2 && Math.random()<0.4){ t.b++; }
-          if(desirability < -10 && t.b>0 && Math.random()<0.3){ t.b--; }
+          if(desirability > 10 && t.b<2 && Math.random()<0.4){ t.b++; t.grow = 1.0; }
+          if(desirability < -10 && t.b>0 && Math.random()<0.3){ t.b--; t.grow = 1.0; }
         }
       }
     }
@@ -715,7 +740,31 @@
     });
 
     function dragPaint(tx,ty,first=false){ if(!currentDrag) currentDrag=[[tx,ty],[tx,ty]]; currentDrag[1]=[tx,ty]; if(first) currentDrag[0]=[tx,ty]; }
-    function finalizeDrag(){ if(!currentDrag) return; const [ax1,ay1]=currentDrag[0], [ax2,ay2]=currentDrag[1]; const x1=Math.min(ax1,ax2), y1=Math.min(ay1,ay2), x2=Math.max(ax1,ax2), y2=Math.max(ay1,ay2); const b=ui.brush; const total = (x2-x1+1)*(y2-y1+1)*b*b*costOf(ui.tool); if(total>0 && !trySpend(total)) { ui.log('Build canceled.'); return; } let any=false; for(let y=y1; y<=y2; y+=b){ for(let x=x1; x<=x2; x+=b){ applyBrush(x,y, (nx,ny)=>{ const ok=place(nx,ny); if(ok) any=true; }); } } if(any){ sfx.build(); } recompute(); }
+    function finalizeDrag(){
+      if(!currentDrag) return;
+      const [a1,b1]=currentDrag[0], [a2,b2]=currentDrag[1];
+      const x1=Math.min(a1,a2), y1=Math.min(b1,b2), x2=Math.max(a1,a2), y2=Math.max(b1,b2);
+      const b=ui.brush;
+      const isLinearTool = (['road','rail','powerline','pipe'].includes(ui.tool) && b===1);
+      // If linear tool with brush 1, draw a line path using Bresenham
+      if(isLinearTool){
+        const line = [];
+        let x=a1, y=b1; const dx=Math.abs(a2-a1), dy=Math.abs(b2-b1); const sx=a1<a2?1:-1; const sy=b1<b2?1:-1; let err = dx-dy;
+        while(true){ if(inb(x,y)) line.push([x,y]); if(x===a2 && y===b2) break; const e2=2*err; if(e2>-dy){ err-=dy; x+=sx; } if(e2<dx){ err+=dx; y+=sy; } }
+        const unique = Array.from(new Set(line.map(([x,y])=> idx(x,y)))).map(i=> [i%SIZE, Math.floor(i/SIZE)]);
+        const total = unique.length * costOf(ui.tool);
+        if(total>0 && !trySpend(total)){ ui.log('Build canceled.'); return; }
+        let any=false; unique.forEach(([x,y])=>{ if(place(x,y)) any=true; });
+        if(any) sfx.build();
+        recompute(); return;
+      }
+      // Default rectangular placement
+      const total = (x2-x1+1)*(y2-y1+1)*b*b*costOf(ui.tool);
+      if(total>0 && !trySpend(total)) { ui.log('Build canceled.'); return; }
+      let any=false; for(let y=y1; y<=y2; y+=b){ for(let x=x1; x<=x2; x+=b){ applyBrush(x,y, (nx,ny)=>{ const ok=place(nx,ny); if(ok) any=true; }); } }
+      if(any){ sfx.build(); }
+      recompute();
+    }
 
     function queryAt(x,y){ const t=world.tiles[idx(x,y)]; const parts=[]; parts.push(`Tile ${x},${y}`); parts.push(`Elev ${t.h}${t.water?' (water)':''}`); if(t.zone===ZONE.RES) parts.push(`Residential L${t.b+1}`); if(t.zone===ZONE.COM) parts.push(`Commercial L${t.b+1}`); if(t.zone===ZONE.IND) parts.push(`Industrial L${t.b+1}`); if(t.zone===ZONE.PARK) parts.push('Park'); if(t.special!==SPECIAL.NONE){ parts.push(['','Power Plant','Water Pump','Fire','Police','School'][t.special]); }
       parts.push(`Road:${(t.t&T.ROAD)?'Y':'N'} Rail:${(t.t&T.RAIL)?'Y':'N'} Pwr:${(t.u&U.POWER)?'Y':'N'} Pipe:${(t.u&U.PIPE)?'Y':'N'}`);
@@ -735,6 +784,9 @@
     document.getElementById('overlay').addEventListener('change', (e)=>{ ui.setOverlay(e.target.value); renderOverlayLegend(); });
     document.getElementById('queryBtn').addEventListener('click', ()=> ui.setTool('query'));
     document.getElementById('helpBtn').addEventListener('click', ()=> ui.showHelp());
+    document.getElementById('helpClose').addEventListener('click', ()=> ui.hideHelp());
+    document.getElementById('help').addEventListener('click', (e)=>{ if(e.target && e.target.id==='help') ui.hideHelp(); });
+    window.addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ ui.hideHelp(); }});
     document.getElementById('newMap').addEventListener('click', ()=>{ if(confirm('Start new random map? Unsaved progress will be lost.')){ seedMap(); world.money=START_MONEY; world.month=0; ui.log('New city founded.'); recompute(); } });
     document.getElementById('nccMap').addEventListener('click', ()=>{ if(confirm('Start New Castle County map? Unsaved progress will be lost.')){ seedNewCastle(); world.money=START_MONEY; world.month=0; ui.log('Welcome to New Castle County, DE.'); recompute(); } });
     document.getElementById('saveBtn').addEventListener('click', ()=>{ localStorage.setItem('micropolis_save', serialize()); ui.log('Saved to localStorage.'); });
@@ -776,19 +828,35 @@
       if(world.speed>0){
         const monthStep = dt * world.speed / MONTH_SECONDS;
         world._mAcc = (world._mAcc||0) + monthStep;
-        if(world._mAcc >= 1){ world.month += 1; world._mAcc -= 1; budgetTick(); }
+        if(world._mAcc >= 1){
+          world.month += 1;
+          world._mAcc -= 1;
+          budgetTick();
+          // Fireworks every New Year (January)
+          if(world.month % 12 === 0){ spawnFireworks(); ui.log('Happy New Year! 🎆'); }
+        }
       }
       requestAnimationFrame(tick);
     }
 
-    // Simple WebAudio music + SFX
-    const audio = { ctx:null, master:null, musicGain:null, on:false };
-    function audioInit(){ if(audio.ctx) return; const ctx = new (window.AudioContext||window.webkitAudioContext)(); audio.ctx=ctx; const master=ctx.createGain(); master.gain.value=0.5; master.connect(ctx.destination); audio.master=master; audio.musicGain=ctx.createGain(); audio.musicGain.gain.value=0.25; audio.musicGain.connect(master); musicLoop(); }
-    function musicChord(freqs, dur){ const now = audio.ctx.currentTime; freqs.forEach((f,i)=>{ const osc=audio.ctx.createOscillator(); const g=audio.ctx.createGain(); osc.type='sine'; osc.frequency.value=f; osc.connect(g); g.connect(audio.musicGain); const a=0.02; g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.15/(i+1), now+a); g.gain.exponentialRampToValueAtTime(0.001, now+dur); osc.start(now); osc.stop(now+dur+0.05); }); }
-    function musicLoop(){ if(!audio.ctx) return; const bpm=60; const beat=60/bpm; let t=audio.ctx.currentTime; const seq=[[220,277,330],[196,247,294],[165,220,262],[196,247,330]]; for(let i=0;i<16;i++){ const chord=seq[i%seq.length].map(f=>f*(1+0.005*Math.sin(i))); setTimeout(()=>{ if(audio.on) musicChord(chord, beat*3.5); }, i*beat*1000); }
-      setTimeout(musicLoop, beat*16*1000);
+    // Catchier WebAudio music + SFX (light sequencer)
+    const audio = { ctx:null, master:null, musicGain:null, on:false, timer:null };
+    function audioInit(){ if(audio.ctx) return; const ctx = new (window.AudioContext||window.webkitAudioContext)(); audio.ctx=ctx; const master=ctx.createGain(); master.gain.value=0.5; master.connect(ctx.destination); audio.master=master; audio.musicGain=ctx.createGain(); audio.musicGain.gain.value=0.25; audio.musicGain.connect(master); startMusic(); }
+    function note(freq, dur, tOffset, type='sine', gain=0.12){ if(!audio.on) return; const t0 = audio.ctx.currentTime + tOffset; const o=audio.ctx.createOscillator(); const g=audio.ctx.createGain(); o.type=type; o.frequency.setValueAtTime(freq, t0); o.connect(g); g.connect(audio.musicGain); g.gain.setValueAtTime(0,t0); g.gain.linearRampToValueAtTime(gain,t0+0.02); g.gain.exponentialRampToValueAtTime(0.001,t0+dur); o.start(t0); o.stop(t0+dur+0.05); }
+    function hat(tOffset){ if(!audio.on) return; const ctx=audio.ctx; const t0=ctx.currentTime+tOffset; const buf=ctx.createBuffer(1, 2205, ctx.sampleRate); const data=buf.getChannelData(0); for(let i=0;i<data.length;i++){ data[i] = (Math.random()*2-1) * Math.exp(-i/400); } const src=ctx.createBufferSource(); src.buffer=buf; const g=ctx.createGain(); g.gain.value=0.08; src.connect(g); g.connect(audio.master); src.start(t0); }
+    function kick(tOffset){ if(!audio.on) return; const t0=audio.ctx.currentTime+tOffset; const o=audio.ctx.createOscillator(); const g=audio.ctx.createGain(); o.type='sine'; o.frequency.setValueAtTime(120, t0); o.frequency.exponentialRampToValueAtTime(40, t0+0.15); g.gain.setValueAtTime(0.2, t0); g.gain.exponentialRampToValueAtTime(0.001, t0+0.18); o.connect(g); g.connect(audio.master); o.start(t0); o.stop(t0+0.2); }
+    function startMusic(){ if(audio.timer) clearInterval(audio.timer); const bpm=78; const beat=60/bpm; let step=0; audio.timer = setInterval(()=>{
+      if(!audio.on) return; const scale=[220,247,262,294,330,349,392,440]; const chordProg=[[0,3,5],[5,0,2],[4,6,1],[5,0,3]]; const ch = chordProg[Math.floor(step/8)%chordProg.length];
+      // Bass + arpeggio
+      const base = scale[ch[0]]/2; note(base, beat*0.45, 0, 'sine', 0.15);
+      const arp = [scale[ch[0]], scale[ch[1]], scale[ch[2]], scale[ch[1]]];
+      for(let i=0;i<4;i++){ note(arp[i], beat*0.4, i*(beat/2), 'triangle', 0.10); }
+      // Percussion
+      kick(0); hat(beat/2); hat(beat);
+      step=(step+1)%16;
+    }, (60/78)*1000);
     }
-    const sfx = { build: ()=>{ if(!audio.ctx) return; const t=audio.ctx.currentTime; const o=audio.ctx.createOscillator(); const g=audio.ctx.createGain(); o.type='triangle'; o.frequency.setValueAtTime(880, t); o.frequency.exponentialRampToValueAtTime(440, t+0.08); g.gain.setValueAtTime(0.0, t); g.gain.linearRampToValueAtTime(0.15, t+0.01); g.gain.exponentialRampToValueAtTime(0.001, t+0.2); o.connect(g); g.connect(audio.master); o.start(t); o.stop(t+0.25);} };
+    const sfx = { build: ()=>{ if(!audio.ctx) return; const t=audio.ctx.currentTime; const o=audio.ctx.createOscillator(); const g=audio.ctx.createGain(); o.type='triangle'; o.frequency.setValueAtTime(880, t); o.frequency.exponentialRampToValueAtTime(660, t+0.06); g.gain.setValueAtTime(0.0, t); g.gain.linearRampToValueAtTime(0.12, t+0.01); g.gain.exponentialRampToValueAtTime(0.001, t+0.2); o.connect(g); g.connect(audio.master); o.start(t); o.stop(t+0.22);} };
     document.getElementById('musicBtn').addEventListener('click', ()=>{ if(!audio.ctx) audioInit(); audio.on=!audio.on; document.getElementById('musicBtn').textContent = 'Music: ' + (audio.on? 'On':'Off'); if(audio.on && audio.ctx.state==='suspended') audio.ctx.resume(); });
 
     // bootstrap
